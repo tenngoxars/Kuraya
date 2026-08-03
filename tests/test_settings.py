@@ -1,0 +1,117 @@
+# -*- coding: utf-8 -*-
+"""
+配置读写。
+
+    python -m unittest discover tests
+"""
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from kuraya import settings
+
+
+class UserConfigDir(unittest.TestCase):
+    """
+    命令行安装时的配置位置。三个平台的分支都在这里断言 ——
+    Path 的行为跟着 os.name 走，在 Windows 上模拟不出 PosixPath，
+    所以判定逻辑必须是不碰 Path 的纯函数，否则 mac 那一支只能上机才测得了
+    """
+
+    def where(self, name, environ=None, home='/Users/me'):
+        got = settings.user_config_dir(name, environ or {}, home)
+        return got.replace('\\', '/')
+
+    def test_macos_default(self):
+        self.assertEqual(self.where('posix'), '/Users/me/.config/kuraya')
+
+    def test_linux_default(self):
+        self.assertEqual(self.where('posix'), '/Users/me/.config/kuraya')
+
+    def test_xdg_respected(self):
+        self.assertEqual(
+            self.where('posix', {'XDG_CONFIG_HOME': '/Users/me/somewhere'}),
+            '/Users/me/somewhere/kuraya')
+
+    def test_windows_uses_appdata(self):
+        self.assertEqual(
+            self.where('nt', {'APPDATA': 'C:/Users/me/AppData/Roaming'}),
+            'C:/Users/me/AppData/Roaming/Kuraya')
+
+    def test_windows_without_appdata(self):
+        self.assertEqual(self.where('nt', home='C:/Users/me'),
+                         'C:/Users/me/AppData/Roaming/Kuraya')
+
+    def test_empty_env_var_ignored(self):
+        """环境变量存在但为空串时不能当成有效路径用"""
+        self.assertEqual(self.where('posix', {'XDG_CONFIG_HOME': ''}),
+                         '/Users/me/.config/kuraya')
+
+
+class ConfigLocation(unittest.TestCase):
+    """装成命令行工具后配置在用户目录，首次运行时那个目录还不存在"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_creates_missing_parent(self):
+        target = self.home / '.config' / 'kuraya' / '设置.ini'
+        with mock.patch.object(settings, 'SETTINGS_FILE', target):
+            settings.save(library=str(self.home))
+        self.assertTrue(target.is_file())
+
+    def test_nested_parents_created(self):
+        target = self.home / 'a' / 'b' / 'c' / '设置.ini'
+        with mock.patch.object(settings, 'SETTINGS_FILE', target):
+            settings.save(library=str(self.home))
+        self.assertTrue(target.is_file())
+
+
+class Sleep(unittest.TestCase):
+    """只能在设置.ini 里改的一项，界面上没有入口"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / '设置.ini'
+        self.addCleanup(self.tmp.cleanup)
+        patcher = mock.patch.object(settings, 'SETTINGS_FILE', self.path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def write(self, text):
+        self.path.write_text(text, encoding='utf-8')
+
+    def test_default_when_absent(self):
+        self.write('[路径]\n影片库目录 = D:\\lib\n')
+        self.assertEqual(settings.load()['sleep'], settings.DEFAULT_SLEEP)
+
+    def test_read_from_ini(self):
+        self.write('[路径]\n影片库目录 = D:\\lib\n\n[刮削]\n间隔秒数 = 0.5\n')
+        self.assertEqual(settings.load()['sleep'], 0.5)
+
+    def test_zero_allowed(self):
+        self.write('[路径]\n影片库目录 = D:\\lib\n\n[刮削]\n间隔秒数 = 0\n')
+        self.assertEqual(settings.load()['sleep'], 0)
+
+    def test_negative_clamped(self):
+        self.write('[路径]\n影片库目录 = D:\\lib\n\n[刮削]\n间隔秒数 = -5\n')
+        self.assertEqual(settings.load()['sleep'], 0)
+
+    def test_garbage_falls_back(self):
+        """填错了不该让整个程序起不来"""
+        self.write('[路径]\n影片库目录 = D:\\lib\n\n[刮削]\n间隔秒数 = 慢一点\n')
+        self.assertEqual(settings.load()['sleep'], settings.DEFAULT_SLEEP)
+
+    def test_survives_save(self):
+        """界面改播放器时会整份重写文件，不能把手写的小节冲掉"""
+        self.write('[路径]\n影片库目录 = D:\\lib\n\n[刮削]\n间隔秒数 = 7\n')
+        settings.save(player='D:\\player.exe')
+        self.assertEqual(settings.load()['sleep'], 7)
+        self.assertEqual(settings.load()['player'], 'D:\\player.exe')
+
+
+if __name__ == '__main__':
+    unittest.main()

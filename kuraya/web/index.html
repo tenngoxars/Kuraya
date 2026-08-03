@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kuraya</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'> <rect width='24' height='24' rx='5' fill='#0d0e11'/> <g fill='none' stroke='#c9a227' stroke-width='1.1' stroke-linejoin='miter'> <circle cx='12' cy='12' r='9.2' opacity='.45'/> <path d='M12 3.8L20.2 12 12 20.2 3.8 12z'/> <path d='M12 9.2l2.8 2.8-2.8 2.8-2.8-2.8z' fill='#c9a227' stroke='none'/> </g> </svg>">
+<style>
+{{STYLE}}
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9.2"/>
+        <path d="M12 3.8L20.2 12 12 20.2 3.8 12z"/>
+        <path class="mark-core" d="M12 9.2l2.8 2.8-2.8 2.8-2.8-2.8z"/>
+      </svg>
+    </span>
+    <h1>KURAYA</h1>
+    <span class="brand-kanji">蔵屋</span>
+    <span class="brand-rule"></span>
+    <span class="eyebrow">Private Collection</span>
+  </div>
+  <div class="stats">
+    <div><span class="stat-num">{{COUNT}}</span><span class="stat-lbl">部影片</span></div>
+    <div><span class="stat-num" id="statActress">—</span><span class="stat-lbl">位演员</span></div>
+    <div><span class="stat-num" id="statStudio">—</span><span class="stat-lbl">个厂商</span></div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <div class="search-wrap">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input id="search" type="text" placeholder="搜索演员 · 番号 · 厂商">
+    <button class="clear-btn" id="clearBtn" type="button" aria-label="清空">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <select id="sortSel">
+    <option value="date_desc">发行日期 · 新到旧</option>
+    <option value="date_asc">发行日期 · 旧到新</option>
+    <option value="added_desc">入库时间 · 新到旧</option>
+  </select>
+  <span id="count"></span>
+</div>
+
+<div class="chips" id="chips"></div>
+<div class="grid" id="grid"></div>
+
+<script>
+{{SCRIPT}}
+</script>
+</body>
+</html>

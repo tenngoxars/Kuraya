@@ -1,0 +1,23 @@
+# winget 本地化清单
+# 提交前需替换：<VERSION>、<REPO_URL>
+
+PackageIdentifier: Kuraya.Kuraya
+PackageVersion: <VERSION>
+PackageLocale: zh-CN
+Publisher: Kuraya
+PackageName: Kuraya
+PackageUrl: <REPO_URL>
+License: MIT
+LicenseUrl: <REPO_URL>/blob/main/LICENSE
+ShortDescription: 本地影片元数据刮削与编目工具
+Description: |-
+  从网络获取本地影片的元数据与封面，按演员与番号整理归档，
+  并生成可离线浏览的静态页面。仅用于本地文件整理，不提供任何影片下载途径。
+Moniker: kuraya
+Tags:
+  - media
+  - metadata
+  - library
+  - organizer
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kuraya"
+description = "影片刮削与编目工具"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+dynamic = ["version"]
+dependencies = [
+    "requests",
+    "urllib3",
+    "lxml",
+    "pillow",
+]
+
+[project.scripts]
+kuraya = "kuraya.__main__:main"
+
+[tool.setuptools]
+packages = ["kuraya", "kuraya.media"]
+
+[tool.setuptools.dynamic]
+version = { attr = "kuraya.__version__" }
+
+# 界面模板不是代码，默认不会被装进去，必须显式声明
+[tool.setuptools.package-data]
+kuraya = ["web/*"]

@@ -1,0 +1,11 @@
+# winget 版本清单
+# 提交前需替换：<VERSION>
+# 提交方式：把 packaging/winget 下三个文件放到
+#   winget-pkgs/manifests/k/Kuraya/Kuraya/<VERSION>/
+# 然后向 microsoft/winget-pkgs 提 PR
+
+PackageIdentifier: Kuraya.Kuraya
+PackageVersion: <VERSION>
+DefaultLocale: zh-CN
+ManifestType: version
+ManifestVersion: 1.6.0

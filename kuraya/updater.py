@@ -164,16 +164,16 @@ def update(yes=False, quiet=False):
         return 0
 
     if not (yes or quiet):
-        from .keys import read_key
         prompt = tr('发现新版本 v{remote}（当前 v{__version__}），'
                     '是否更新？[Y/n]',
                     remote=remote, __version__=__version__)
-        # 换行输出，光标不悬停行尾（避免终端/Warp 拦截方向键）
-        print(f'  {prompt} {C.GOLD}›{C.RESET}')
-        key = read_key()
-        # raw 模式无回显，y/n 手动显示；回车/Esc 只换行
-        print(key if key in ('y', 'Y', 'n', 'N') else '')
-        if key not in ('y', 'Y', 'enter', ''):
+        # 用 input() 而非 raw 读键：终端原生回显按键，
+        # raw 模式的手动回显在部分终端（Warp 等）不可见
+        try:
+            answer = input(f'  {prompt} {C.GOLD}›{C.RESET} ').strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return 0
+        if answer not in ('', 'y', 'yes'):
             print(tr('  已取消'))
             return 0
 
@@ -238,13 +238,13 @@ def _brew_update(yes=False, quiet=False):
     enable_ansi()
 
     if not (yes or quiet):
-        from .keys import read_key
         prompt = tr('将调用 brew upgrade kuraya（保持 Homebrew 状态一致），'
                     '是否继续？[Y/n]')
-        print(f'  {prompt} {C.GOLD}›{C.RESET}')
-        key = read_key()
-        print(key if key in ('y', 'Y', 'n', 'N') else '')
-        if key not in ('y', 'Y', 'enter', ''):
+        try:
+            answer = input(f'  {prompt} {C.GOLD}›{C.RESET} ').strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return 0
+        if answer not in ('', 'y', 'yes'):
             print(tr('  已取消'))
             return 0
 

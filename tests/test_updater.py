@@ -344,7 +344,7 @@ class UpdateCommand(unittest.TestCase):
                 with mock.patch.object(updater, 'latest',
                                        return_value='9.9.9'), \
                         self.frozen()[0], self.frozen()[1], \
-                        mock.patch('kuraya.keys.read_key',
+                        mock.patch('builtins.input',
                                    return_value=key), \
                         mock.patch.object(updater, '_download') as dl:
                     self.assertEqual(updater.update(), 0)
@@ -357,7 +357,7 @@ class UpdateCommand(unittest.TestCase):
         with mock.patch.object(updater, 'latest',
                                return_value='9.9.9'), \
                 self.frozen()[0], self.frozen()[1], \
-                mock.patch('kuraya.keys.read_key', return_value='y'), \
+                mock.patch('builtins.input', return_value='y'), \
                 mock.patch.object(updater, '_download',
                                   return_value=(new_dir, new_dir.parent)), \
                 mock.patch.object(updater, '_replace') as rep:
@@ -407,7 +407,7 @@ class UpdateCommand(unittest.TestCase):
         with mock.patch.object(updater, 'FROZEN', True), \
                 mock.patch.object(updater.sys, 'platform', 'darwin'), \
                 mock.patch.object(updater.sys, 'executable', exe), \
-                mock.patch('kuraya.keys.read_key', return_value='esc'), \
+                mock.patch('builtins.input', return_value='n'), \
                 mock.patch.object(updater, '_run_brew_upgrade') as run:
             self.assertEqual(updater.update(), 0)
         run.assert_not_called()

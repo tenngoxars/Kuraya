@@ -24,13 +24,13 @@
 
 ## 安装
 
-从 [Releases](https://github.com/tenngoxars/Kuraya/releases) 下载对应平台 zip，**解压即用**：
-Windows 双击 `Kuraya\Kuraya.exe`；macOS 双击 `Kuraya/Kuraya`（首次打开右键→打开；推荐 `brew install tenngoxars/tap/kuraya`，免拦截）；Linux 运行 `Kuraya/Kuraya`。
+**推荐命令行安装**（装好后可在任意终端输入 `kuraya`，升级时重复同一命令即可）：
 
-需要 `kuraya` 命令（脚本/计划任务调用）时：
-
+- macOS：`brew install tenngoxars/tap/kuraya`
 - Windows：`irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 | iex`
 - Linux：`curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh | bash`
+
+也可以从 [Releases](https://github.com/tenngoxars/Kuraya/releases) 下载对应平台 zip **解压即用**（免安装）：Windows 双击 `Kuraya\Kuraya.exe`；macOS 双击 `Kuraya/Kuraya`（首次打开右键→打开）；Linux 运行 `Kuraya/Kuraya`。
 
 ## 快速开始
 

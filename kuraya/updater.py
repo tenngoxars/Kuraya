@@ -357,6 +357,12 @@ def _download(version):
     exe = 'Kuraya.exe' if os.name == 'nt' else 'Kuraya'
     if not new.is_dir() or not (new / exe).is_file():
         raise UpdateError(tr("安装包结构不符，已放弃（现有安装未动）"))
+    if os.name != 'nt':
+        # 双保险：即使 zip 没带权限位，可执行文件也必须有 +x
+        exe_path = new / exe
+        mode = exe_path.stat().st_mode
+        if not mode & 0o111:
+            exe_path.chmod(mode | 0o111)
     return new, tmp
 
 

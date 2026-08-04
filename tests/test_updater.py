@@ -241,6 +241,22 @@ class Download(unittest.TestCase):
             self.addCleanup(shutil.rmtree, tmp_root, ignore_errors=True)
 
 
+    def test_missing_exe_permission_forced(self):
+        """zip 完全没带权限位时，主可执行文件也要强制补 +x"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'x' / 'Kuraya'
+            root.mkdir(parents=True)
+            info = zipfile.ZipInfo('Kuraya/Kuraya')
+            info.external_attr = 0                     # 无权限信息
+            with zipfile.ZipFile(Path(tmp) / 'pkg.zip', 'w') as zf:
+                zf.writestr(info, b'#!/bin/sh\n')
+            with self.fake_get(Path(tmp) / 'pkg.zip'):
+                new, tmp_root = updater._download('0.3.0')
+            mode = (new / 'Kuraya').stat().st_mode
+            self.assertTrue(mode & 0o111, f'可执行位缺失: {oct(mode)}')
+            self.addCleanup(shutil.rmtree, tmp_root, ignore_errors=True)
+
+
 class Replace(unittest.TestCase):
     """替换顺序：旧目录改名 .old → 新目录就位 → 删旧；失败恢复"""
 

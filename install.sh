@@ -85,7 +85,7 @@ msg downloading "$URL"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
-curl -fsSL "$URL" -o "$TMP/kuraya.zip"
+curl -fsSL --progress-bar "$URL" -o "$TMP/kuraya.zip"
 
 msg installing "$DEST"
 rm -rf "$DEST"

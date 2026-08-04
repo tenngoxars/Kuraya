@@ -155,6 +155,8 @@ def update(yes=False, quiet=False):
                   f'  {msg2} {C.BOLD}pipx upgrade kuraya{C.RESET}')
         return 1
 
+    if not quiet:
+        print(f'  {C.GOLD}◈{C.RESET} {tr("正在检查更新...")}')
     remote = latest(force=True)
     if remote is None:
         _finish(tr("无法检查更新（网络或服务不可用）"), quiet)

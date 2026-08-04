@@ -26,21 +26,22 @@ def version_from_version_info() -> str | None:
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print('用法: python packaging/check_tag.py <tag>', file=sys.stderr)
+        print('usage: python packaging/check_tag.py <tag>', file=sys.stderr)
         return 2
     tag = sys.argv[1]
     if not tag.startswith('v'):
-        print(f'tag {tag} 应为 v<版本> 形式', file=sys.stderr)
+        print(f'tag {tag} must look like v<version>', file=sys.stderr)
         return 1
     expected = tag[1:]
     ok = True
     for name, value in [('kuraya/__init__.py', version_from_init()),
                         ('packaging/version_info.txt', version_from_version_info())]:
         if value != expected:
-            print(f'{name} 版本 {value} 与 tag {tag} 不一致', file=sys.stderr)
+            print(f'{name} version {value} does not match tag {tag}',
+                  file=sys.stderr)
             ok = False
     if ok:
-        print(f'tag {tag} 与版本一致')
+        print(f'tag {tag} matches version')
     return 0 if ok else 1
 
 

@@ -68,6 +68,9 @@ jobs:
           python-version: "3.13"
       - name: 校验 tag 与版本号一致
         run: python packaging/check_tag.py "$GITHUB_REF_NAME"
+      # ubuntu runner 默认不带 zip 命令，release.sh 打包需要它
+      - name: 安装 zip
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zip
       - name: 构建并打包
         run: ./release.sh
       - uses: actions/upload-artifact@v4

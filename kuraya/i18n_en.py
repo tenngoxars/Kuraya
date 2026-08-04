@@ -45,7 +45,7 @@ TABLE = {
     '界面语言': 'Interface language',
     '当前': 'Current',
     '已保存': 'Saved',
-    '↑↓ 选择 · 回车 确认 · Esc 返回': '↑↓ select · Enter confirm · Esc back',
+    '↑↓ 选择 · 回车 确认 · Esc {action}': '↑↓ select · Enter confirm · Esc {action}',
     '尚未生成页面': 'page not generated yet',
     '个文件': 'files',
     '空': 'empty',

@@ -67,12 +67,14 @@ def shorten(path, room):
     return f'{head}…{tail}'
 
 
-def menu_loop(draw_header, options, selected=0):
+def menu_loop(draw_header, options, selected=0, esc_label=None):
     """
     方向键导航 + 回车确认的选择器。options: [(key, label, desc)]。
     返回选中项的 key；Esc / EOF 返回 None。数字键仍是快捷方式。
+    esc_label 描述 Esc 在此菜单的动作（主菜单为「退出」，子菜单为「返回」）。
     """
     from .keys import read_key
+    esc_label = esc_label or tr('返回')
     while True:
         clear_screen()
         say()
@@ -91,7 +93,7 @@ def menu_loop(draw_header, options, selected=0):
                 say(f'  {C.GREY}·{C.RESET} {C.GOLD}{key}{C.RESET}  {label}'
                     f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}')
         say()
-        hint = tr('↑↓ 选择 · 回车 确认 · Esc 返回')
+        hint = tr('↑↓ 选择 · 回车 确认 · Esc {action}', action=esc_label)
         # 完整换行输出：光标落在下一行行首，不悬停在行尾
         # （悬停会让终端/Warp 把提示行当输入块，方向键被拦截）
         print(f'  {C.FAINT}{hint}{C.RESET}')
@@ -299,7 +301,8 @@ def run():
             ('5', tr("更新"), tr("检查并安装新版本")),
             ('0', tr("退出"), ''),
         ]
-        choice = menu_loop(lambda: draw_header(library, source), options)
+        choice = menu_loop(lambda: draw_header(library, source), options,
+                           esc_label=tr('退出'))
 
         # Esc 与管道 EOF 视为退出（EOF 是脚本/双击场景的默认收尾）
         if choice is None or choice == '0':

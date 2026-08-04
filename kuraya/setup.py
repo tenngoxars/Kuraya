@@ -95,6 +95,7 @@ def offer_path_install():
     from .keys import read_key
     print(f'  {tr("设置吗？输入 y 确认，直接回车跳过")} {C.GOLD}›{C.RESET}')
     key = read_key()
+    print(key if key in ('y', 'Y', 'n', 'N') else '')
 
     settings.save(path_asked='1')      # 无论选什么都不再追问
     if key != 'y' and key != 'Y':

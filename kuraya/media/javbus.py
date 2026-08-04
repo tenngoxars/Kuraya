@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlparse
 
 from lxml import etree
 
+from ..i18n import tr
 from . import http
 from .model import Movie
 
@@ -189,12 +190,12 @@ def selftest() -> int:
         try:
             movie = fetch(number)
         except http.Unavailable as exc:
-            print(f'  {number}  网络不可用：{exc}')
+            print(tr('  {number}  网络不可用：{exc}', number=number, exc=exc))
             failed += 1
             continue
 
         if movie is None:
-            print(f'  {number}  未找到')
+            print(tr('  {number}  未找到', number=number))
             failed += 1
             continue
 
@@ -207,10 +208,11 @@ def selftest() -> int:
 
         mark = '✕' if missing else '✓'
         print(f'  {mark} {movie.number}  {movie.title[:32]}')
-        print(f'      {movie.release}  {movie.runtime}分  {movie.studio}  '
-              f'{"、".join(movie.actors[:3])}')
+        actors = tr('、').join(movie.actors[:3])
+        print(f'      {movie.release}  {movie.runtime}{tr("分")}  '
+              f'{movie.studio}  {actors}')
         print(f'      {movie.cover_url}')
         if missing:
-            print(f'      缺字段：{", ".join(missing)}')
+            print(tr('      缺字段：{fields}', fields=tr('、').join(missing)))
             failed += 1
     return failed

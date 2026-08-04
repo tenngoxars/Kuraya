@@ -12,11 +12,19 @@ from urllib.parse import quote
 import json
 from datetime import datetime, timedelta
 
+# 多语言：裸脚本运行时包不在搜索路径，tr 回退原文、判定表用同值
+try:
+    from kuraya.i18n import TRADITIONAL_CODES, tr
+except ImportError:
+    def tr(text, **kw):
+        return text.format(**kw) if kw else text
+    TRADITIONAL_CODES = ('zh-tw', 'zh-hk', 'zh-mo', 'zh-hant')
+
 if len(sys.argv) < 2:
-    raise SystemExit('用法: python gallery.py <影片库目录>')
+    raise SystemExit(tr('用法: python gallery.py <影片库目录>'))
 BASE = os.path.abspath(sys.argv[1])
 if not os.path.isdir(BASE):
-    raise SystemExit(f'影片库目录不存在: {BASE}')
+    raise SystemExit(tr('影片库目录不存在: {base}', base=BASE))
 
 # 非演员目录，扫描时跳过
 SKIP = {"待整理", "Kuraya", "kuraya"}
@@ -114,7 +122,9 @@ for it in items:
     deduped.append(it)
 items = deduped
 
-print(f"共收录 {len(items)} 部")
+print(tr('共收录 {n} 部', n=len(items)))
+# 稳定标记供父进程解析（子进程输出会随语言变化，机器接口必须固定）
+print(f'gallery-collected={len(items)}')
 # 默认按发行日期新到旧排序（无日期的排最后）
 items.sort(key=lambda x: (x["date"] or "0000-00-00"), reverse=True)
 
@@ -142,7 +152,9 @@ except ImportError:
 
 html = read_web("index.html")
 html = html.replace("{{STYLE}}", read_web("style.css").rstrip("\n"))
-html = html.replace("{{SCRIPT}}", read_web("app.js").rstrip("\n"))
+script = read_web("app.js").replace(
+    "{{TRADITIONAL_CODES}}", json.dumps(TRADITIONAL_CODES))
+html = html.replace("{{SCRIPT}}", script.rstrip("\n"))
 html = html.replace("{{COUNT}}", str(len(items)))
 html = html.replace("{{PLAY_MODE}}", play_mode)
 html = html.replace("{{DATA_JSON}}", json.dumps(items, ensure_ascii=False))
@@ -150,4 +162,5 @@ html = html.replace("{{DATA_JSON}}", json.dumps(items, ensure_ascii=False))
 out_path = os.path.join(BASE, "index.html")
 with open(out_path, "w", encoding="utf-8") as f:
     f.write(html)
-print("已生成", out_path, "大小", os.path.getsize(out_path), "字节")
+print(tr('已生成 {path}，大小 {size} 字节',
+         path=out_path, size=os.path.getsize(out_path)))

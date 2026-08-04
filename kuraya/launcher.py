@@ -11,7 +11,8 @@ import threading
 import time
 import unicodedata
 
-from . import media, picker, settings
+from . import media, settings
+from .i18n import tr
 from .media.model import (CoverReady, FailReason, Failed, Fetched, Found,
                           PosterReady, Probing, Stage, Started, Stored)
 
@@ -237,17 +238,17 @@ def run(kind, *args):
 
 # ---------- 各步骤 ----------
 PROBING_TEXT = {
-    Stage.COVER: '探测封面源',
-    Stage.CROP: '裁剪竖版海报',
-    Stage.ARCHIVE: '写入元数据并移动文件',
+    Stage.COVER: tr("探测封面源"),
+    Stage.CROP: tr("裁剪竖版海报"),
+    Stage.ARCHIVE: tr("写入元数据并移动文件"),
 }
 
 FAIL_TEXT = {
-    FailReason.NO_NUMBER: ('番号', '未能识别番号'),
-    FailReason.NOT_FOUND: ('查询', '未找到元数据'),
-    FailReason.NETWORK: ('网络', '连不上数据源'),
-    FailReason.COVER_FAILED: ('封面', '未能取得封面'),
-    FailReason.ARCHIVE_FAILED: ('入库', '未能入库'),
+    FailReason.NO_NUMBER: (tr("番号"), tr("未能识别番号")),
+    FailReason.NOT_FOUND: (tr("查询"), tr("未找到元数据")),
+    FailReason.NETWORK: (tr("网络"), tr("连不上数据源")),
+    FailReason.COVER_FAILED: (tr("封面"), tr("未能取得封面")),
+    FailReason.ARCHIVE_FAILED: (tr("入库"), tr("未能入库")),
 }
 
 
@@ -274,7 +275,7 @@ def do_scrape(library, source, opts=None):
         dry_run=opts.get('dry_run', False),
     )
 
-    spin.set('正在扫描待处理影片')
+    spin.set(tr("正在扫描待处理影片"))
 
     for event in media.process(config):
         if VERBOSE:
@@ -285,7 +286,7 @@ def do_scrape(library, source, opts=None):
                 stats['found'] = count
                 if count == 0:
                     spin.hide()
-                    info('没有待处理的影片')
+                    info(tr("没有待处理的影片"))
 
             case Started(number=number, index=index):
                 close_pending()
@@ -295,36 +296,37 @@ def do_scrape(library, source, opts=None):
                 gap = W - dw(f'▸ {number}') - dw(tag) - 1
                 say(f'   {C.GOLD}▸{C.RESET} {C.BOLD}{number}{C.RESET}'
                     f'{" " * max(1, gap)}{C.GREY}{tag}{C.RESET}')
-                spin.set(f'查询 {number} 的元数据')
+                spin.set(tr("查询 {number} 的元数据", number=number))
 
             case Fetched(movie=movie):
                 # 元数据这一行排在「入库」之前，先攒着
                 detail = movie_detail(movie)
 
             case Probing(stage=stage):
-                spin.set(PROBING_TEXT.get(stage, f'查询 {current} 的元数据'))
+                spin.set(PROBING_TEXT.get(stage, tr("查询 {number} 的元数据",
+                                                    number=current)))
 
             case CoverReady():
-                branch('├', '封面', '已下载', color=C.GREY)
+                branch('├', tr("封面"), tr("已下载"), color=C.GREY)
 
             case PosterReady():
-                branch('├', '裁剪', '已生成竖版海报', color=C.GREY)
+                branch('├', tr("裁剪"), tr("已生成竖版海报"), color=C.GREY)
 
             case Stored(path=path, elapsed=elapsed):
                 if detail:
-                    branch('├', '元数据', detail)
+                    branch('├', tr("元数据"), detail)
                 where = '\\'.join(str(path).replace('/', '\\').split('\\')[-2:])
-                branch('└', '入库', where, right=f'{elapsed:.1f}s')
+                branch('└', tr("入库"), where, right=f'{elapsed:.1f}s')
                 stats['done'] += 1
                 resolved = True
-                spin.set('准备处理下一部')
+                spin.set(tr("准备处理下一部"))
 
             case Failed(reason=reason):
                 label, text = FAIL_TEXT[reason]
                 branch('└', label, text, color=C.RED)
                 stats['failed'] += 1
                 resolved = True
-                spin.set('准备处理下一部')
+                spin.set(tr("准备处理下一部"))
 
     close_pending()
     spin.hide()
@@ -334,189 +336,64 @@ def do_scrape(library, source, opts=None):
 def do_clean(source, library):
     removed = kept = linked = 0
     failed = False
-    spin.set('检查源目录')
+    spin.set(tr("检查源目录"))
     for text in run('cleanup', str(source), str(library)):
         if VERBOSE:
             say(f'{C.FAINT}    {text}{C.RESET}')
         if text.startswith(CHILD_FAILED):
             failed = True
-        elif text.startswith('[清理]'):
-            info(f'移除 {text[4:].strip()}')
+        elif text.startswith('[cleanup:rm]'):
+            info(tr("移除 {name}", name=text[len('[cleanup:rm]'):].strip()))
             removed += 1
-        elif text.startswith('[已入库]'):
-            info(f'{text[5:].strip()} 此前已入库，移除重复文件')
+        elif text.startswith('[cleanup:linked]'):
+            info(tr("{name} 此前已入库，移除重复文件",
+                    name=text[len('[cleanup:linked]'):].strip()))
             linked += 1
-        elif text.startswith('[保留]'):
-            say(f'    {C.RED}!{C.RESET} {C.GREY}{text[4:].strip()}{C.RESET} '
-                f'{C.FAINT}未能刮削，已留在待整理目录{C.RESET}')
+        elif text.startswith('[cleanup:kept]'):
+            prefix = len('[cleanup:kept]')
+            say(f'    {C.RED}!{C.RESET} {C.GREY}{text[prefix:].strip()}{C.RESET} '
+                f'{C.FAINT}{tr("未能刮削，已留在待整理目录")}{C.RESET}')
             kept += 1
     spin.hide()
     if failed:
-        say(f'    {C.RED}✕ 清理源目录失败，可用 -v 查看详细输出{C.RESET}')
+        say(f'    {C.RED}✕ {tr("清理源目录失败，可用 -v 查看详细输出")}{C.RESET}')
     elif removed == 0 and kept == 0 and linked == 0:
-        info('源目录已是干净的')
+        info(tr("源目录已是干净的"))
     return removed
 
 
 def do_refresh(library):
     total = None
     failed = False
-    spin.set('扫描影片库并生成页面')
+    spin.set(tr("扫描影片库并生成页面"))
     for text in run('gallery', str(library)):
         if VERBOSE:
             say(f'{C.FAINT}    {text}{C.RESET}')
         if text.startswith(CHILD_FAILED):
             failed = True
             continue
-        m = re.search(r'共收录 (\d+) 部', text)
+        m = re.search(r'gallery-collected=(\d+)', text)
         if m:
             total = int(m.group(1))
     spin.hide()
 
     # 拿不到收录数说明子进程没正常跑完，不能当成「库里就是 0 部」
     if failed or total is None:
-        say(f'    {C.RED}✕ 重建页面失败，片库页面未更新{C.RESET}')
-        say(f'    {C.GREY}可用 -v 查看详细输出{C.RESET}')
+        say(f'    {C.RED}✕ {tr("重建页面失败，片库页面未更新")}{C.RESET}')
+        say(f'    {C.GREY}{tr("可用 -v 查看详细输出")}{C.RESET}')
         return 0
-    say(f'    {C.GREEN}✓{C.RESET} {C.GREY}页面已重新生成，收录{C.RESET} '
-        f'{C.BOLD}{total}{C.RESET} {C.GREY}部{C.RESET}')
+    say(f'    {C.GREEN}✓{C.RESET} {C.GREY}{tr("页面已重新生成，收录")}{C.RESET} '
+        f'{C.BOLD}{total}{C.RESET} {C.GREY}{tr("部")}{C.RESET}')
     return total
-
-
-def ask_library_path():
-    """
-    选择框用不了时改为在终端里输入。
-
-    装成命令行工具的场景下这不是退路而是常态：macOS 的 Homebrew Python 默认不带
-    tkinter，服务器上更是连桌面都没有。让人去手动创建一个还不存在的配置文件，
-    等于把首次运行堵死。
-    """
-    say(f'    {C.GREY}改为手动输入。也可以随时用下面这条命令设置：{C.RESET}')
-    say(f'    {C.FAINT}kuraya config --set-library <影片库目录>{C.RESET}')
-    say()
-    try:
-        raw = input(f'  影片库目录 {C.GOLD}›{C.RESET} ').strip().strip('"\'')
-    except (EOFError, KeyboardInterrupt):
-        return ''
-    if not raw:
-        return ''
-
-    path = os.path.expanduser(raw)
-    if not os.path.isdir(path):
-        say(f'    {C.RED}✕{C.RESET} 目录不存在：{path}')
-        return ''
-    return path
-
-
-def first_run_setup():
-    """没有配置时的引导：说明用途，弹出原生目录选择框，写入配置"""
-    brand()
-    say()
-    say(f'  {C.BOLD}初次使用{C.RESET}')
-    say()
-    info('需要先指定影片库位置——整理好的影片会按「演员名\\番号」存放在那里。')
-    info('待整理目录默认为影片库下的「待整理」，把新下载的影片放进去即可。')
-    say()
-
-    say(f'  {C.GOLD}▸{C.RESET} 即将弹出目录选择窗口，请选择影片库位置')
-    spin.set('等待选择目录')
-    path, err = picker.pick('folder', '选择影片库目录')
-    spin.hide()
-
-    if err:
-        say(f'    {C.RED}✕{C.RESET} 无法打开选择窗口：{err}')
-        path = ask_library_path()
-    if not path:
-        say(f'    {C.GREY}已取消{C.RESET}')
-        return None
-
-    player = settings.detect_player()
-    cfg = settings.save(library=path, source='', player=player)
-    # 用户刚亲自选定，允许创建
-    library, source = settings.ensure_dirs(cfg['library'], cfg['source'], create_library=True)
-
-    say(f'    {C.GREEN}✓{C.RESET} 影片库  {library}')
-    say(f'    {C.GREEN}✓{C.RESET} 待整理  {source}')
-    if player:
-        say(f'    {C.GREEN}✓{C.RESET} 播放器  {player}')
-    else:
-        say(f'    {C.GREY}未检测到常见播放器，将用系统默认程序打开{C.RESET}')
-    say()
-    info('以上设置已保存，之后可在「设置.ini」中修改。')
-    say()
-    offer_path_install()
-    return library, source
-
-
-def offer_path_install():
-    """登记到 PATH 会改动用户环境变量，须先征得同意，且只问一次"""
-    from . import pathenv
-    if os.name != 'nt' or not getattr(sys, 'frozen', False):
-        return
-    if pathenv.is_installed() or settings.load().get('path_asked'):
-        return
-
-    say(f'  {C.BOLD}以后想更方便地打开吗？{C.RESET}')
-    info('现在每次都要找到这个程序双击。设置一下的话，')
-    info('在任意窗口输入 kuraya 就能直接打开，不用再翻文件夹。')
-    say()
-    info('这项设置只影响你自己的账户，之后随时可以取消。')
-    say()
-    try:
-        answer = input(f'  设置吗？输入 y 确认，直接回车跳过 {C.GOLD}›{C.RESET} ').strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        answer = ''
-
-    settings.save(path_asked='1')      # 无论选什么都不再追问
-    if answer != 'y':
-        say(f'    {C.GREY}已跳过。以后想设置，运行 kuraya install 即可{C.RESET}')
-        say()
-        return
-
-    ok, why = pathenv.install()
-    if ok:
-        say(f'    {C.GREEN}✓{C.RESET} 设置完成')
-        say(f'    {C.GREY}下次{C.RESET}{C.BOLD}新打开{C.RESET}{C.GREY}一个命令行窗口，'
-            f'输入 kuraya 就能启动（当前已打开的窗口不算）{C.RESET}')
-    else:
-        say(f'    {C.RED}✕ 设置失败：{why}{C.RESET}')
-    say()
-
-
-def load_paths():
-    """读取配置；未配置则走首次运行引导。返回 (影片库, 待整理) 或 None"""
-    cfg = settings.load()
-    if not cfg['configured']:
-        return first_run_setup()
-    try:
-        return settings.ensure_dirs(cfg['library'], cfg['source'])
-    except settings.LibraryMissing as exc:
-        raise ConfigError(str(exc))
-    except OSError as exc:
-        raise ConfigError(f'无法访问影片库目录：{exc}')
-
-
-def wait_exit():
-    try:
-        input(f'\n  {C.FAINT}按回车键关闭窗口{C.RESET}')
-    except (EOFError, KeyboardInterrupt):
-        pass
-
-
-def show_error(exc):
-    box([('无法启动', C.BOLD)], C.RED)
-    say()
-    for row in str(exc).split('\n'):
-        say(f'  {C.RED if not row.startswith(" ") else C.GREY}{row}{C.RESET}')
 
 
 # ---------- 命令 ----------
 def cmd_scrape(library, source, opts=None):
     """只刮削，不重建页面。返回统计结果"""
-    section('①', '刮削影片')
+    section('①', tr("刮削影片"))
     stats = do_scrape(library, source, opts)
     say()
-    section('②', '清理源目录')
+    section('②', tr("清理源目录"))
     do_clean(source, library)
     source.mkdir(parents=True, exist_ok=True)
     return stats
@@ -526,10 +403,10 @@ def cmd_rebuild(library):
     """只重建片库页面。返回收录总数"""
     brand()
     say()
-    section('①', '重新扫描并生成页面')
+    section('①', tr("重新扫描并生成页面"))
     total = do_refresh(library)
     say()
-    box([(f'库内共 {total} 部', C.GREEN)], C.GREEN)
+    box([(tr("库内共 {total} 部", total=total), C.GREEN)], C.GREEN)
     return total
 
 
@@ -542,15 +419,15 @@ def cmd_all(library, source, opts=None):
     stats = cmd_scrape(library, source, opts)
     say()
 
-    section('③', '重建片库页面')
+    section('③', tr("重建片库页面"))
     total = do_refresh(library)
     say()
 
-    bits = [f'新入库 {stats["done"]} 部']
+    bits = [tr("新入库 {done} 部", done=stats['done'])]
     if stats['failed']:
-        bits.append(f'失败 {stats["failed"]} 部')
-    bits.append(f'库内共 {total} 部')
-    bits.append(f'耗时 {time.time() - t0:.0f}s')
+        bits.append(tr("失败 {failed} 部", failed=stats['failed']))
+    bits.append(tr("库内共 {total} 部", total=total))
+    bits.append(tr("耗时 {elapsed:.0f}s", elapsed=time.time() - t0))
     tone = C.RED if stats['failed'] else C.GREEN
-    box([(' · '.join(bits), tone), ('打开或切回 index.html 查看', C.FAINT)], tone)
+    box([(' · '.join(bits), tone), (tr("打开或切回 index.html 查看"), C.FAINT)], tone)
     return stats

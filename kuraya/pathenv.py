@@ -65,10 +65,11 @@ def is_installed():
 
 def install():
     """加入用户 PATH。返回 (是否成功, 说明)"""
+    from .i18n import tr
     if os.name != 'nt':
-        return False, '仅 Windows 支持自动登记'
+        return False, tr('仅 Windows 支持自动登记')
     if is_installed():
-        return True, '已在 PATH 中'
+        return True, tr('已在 PATH 中')
     try:
         raw, kind = _read()
         parts = _entries(raw)
@@ -81,8 +82,9 @@ def install():
 
 def uninstall():
     """从用户 PATH 中移除。返回 (是否成功, 说明)"""
+    from .i18n import tr
     if os.name != 'nt':
-        return False, '仅 Windows 支持'
+        return False, tr('仅 Windows 支持')
     try:
         raw, kind = _read()
         target = os.path.normcase(program_dir().rstrip('\\'))

@@ -145,6 +145,14 @@ def _sleep(cfg):
         return DEFAULT_SLEEP
 
 
+def _write(cfg):
+    """写回配置。装成命令行工具时配置目录首次运行并不存在"""
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_FILE, 'w', encoding='utf-8') as fp:
+        fp.write('# 由程序自动生成，也可手动编辑\n')
+        cfg.write(fp)
+
+
 def save(library=None, source=None, player=None, path_asked=None):
     """写入配置。传 None 的项保持原值"""
     cfg = _read()
@@ -159,13 +167,27 @@ def save(library=None, source=None, player=None, path_asked=None):
             cfg.add_section('状态')
         cfg.set('状态', '已询问PATH', path_asked)
 
-    # 装成命令行工具时配置在 ~/.config/kuraya 之类的位置，首次运行时并不存在
-    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(SETTINGS_FILE, 'w', encoding='utf-8') as fp:
-        fp.write('# 由程序自动生成，也可手动编辑\n')
-        cfg.write(fp)
-
+    _write(cfg)
     return load()
+
+
+def update_state():
+    """更新检查的上次时间戳与最新版本号，未检查过为空串"""
+    cfg = _read()
+    return {
+        'checked': cfg.get('状态', '上次检查时间', fallback='').strip(),
+        'latest': cfg.get('状态', '最新版本', fallback='').strip(),
+    }
+
+
+def save_update_state(checked, latest):
+    """记录一次更新检查的时间戳与结果，供下次启动复用"""
+    cfg = _read()
+    if not cfg.has_section('状态'):
+        cfg.add_section('状态')
+    cfg.set('状态', '上次检查时间', checked)
+    cfg.set('状态', '最新版本', latest)
+    _write(cfg)
 
 
 class LibraryMissing(Exception):
@@ -183,10 +205,12 @@ def ensure_dirs(library, source, create_library=False):
     lib = Path(library).expanduser()
     if not lib.is_dir():
         if not create_library:
+            from .i18n import tr
             raise LibraryMissing(
-                f'影片库目录不存在：{lib}\n'
-                f'    可能是磁盘未连接、盘符变化或路径被移动。\n'
-                f'    确认无误后可修改「设置.ini」中的影片库目录。')
+                tr('影片库目录不存在：{lib}\n'
+                   '    可能是磁盘未连接、盘符变化或路径被移动。\n'
+                   '    确认无误后可修改「设置.ini」中的影片库目录。',
+                   lib=lib))
         lib.mkdir(parents=True, exist_ok=True)
 
     # 待整理在影片库内，刮削后可能被清空删除，每次补建

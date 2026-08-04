@@ -15,7 +15,10 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from kuraya import launcher
+from kuraya import i18n as _i18n
+_i18n._lang = _i18n.ZH_CN  # 测试断言简体中文文案，先固定语言再导入被测模块
+
+from kuraya import launcher, setup
 from kuraya.media.model import (CoverReady, FailReason, Failed, Fetched, Found,
                                 Movie, PosterReady, Probing, Settings, Stage,
                                 Started, Stored)
@@ -152,7 +155,7 @@ class LibraryPathInput(unittest.TestCase):
         buffer = io.StringIO()
         with mock.patch('builtins.input', return_value=typed), \
              redirect_stdout(buffer):
-            return launcher.ask_library_path()
+            return setup.ask_library_path()
 
     def test_accepts_existing_directory(self):
         self.assertEqual(self.ask(str(self.existing)), str(self.existing))
@@ -171,7 +174,7 @@ class LibraryPathInput(unittest.TestCase):
         buffer = io.StringIO()
         with mock.patch('builtins.input', side_effect=EOFError), \
              redirect_stdout(buffer):
-            self.assertEqual(launcher.ask_library_path(), '')
+            self.assertEqual(setup.ask_library_path(), '')
 
 
 class Empty(unittest.TestCase):
@@ -191,6 +194,51 @@ class DryRun(unittest.TestCase):
             Started(number='YYYY-111', index=2),
         ], dry_run=True)
         self.assertEqual(stats, {'found': 2, 'done': 0, 'failed': 0})
+
+
+class ChildProtocol(unittest.TestCase):
+    """
+    子进程输出经 ASCII 标记解析（cleanup/gallery），
+    界面文案随语言变化，解析标记必须稳定
+    """
+
+    def clean(self, lines):
+        buffer = io.StringIO()
+        with mock.patch.object(launcher, 'run', return_value=iter(lines)), \
+             mock.patch.object(launcher.spin, 'set'), \
+             mock.patch.object(launcher.spin, 'hide'), \
+             redirect_stdout(buffer):
+            removed = launcher.do_clean(Path('src'), Path('lib'))
+        return removed, ANSI.sub('', buffer.getvalue())
+
+    def test_cleanup_markers_parsed(self):
+        removed, out = self.clean([
+            '[cleanup:rm] 空文件夹A',
+            '[cleanup:linked] 演员X/AAA-001',
+            '[cleanup:kept] 没刮到的',
+        ])
+        self.assertEqual(removed, 1)
+        self.assertIn('移除 空文件夹A', out)
+        self.assertIn('此前已入库', out)
+        self.assertIn('未能刮削', out)
+
+    def test_child_failure_reported(self):
+        removed, out = self.clean([f'{launcher.CHILD_FAILED} 1'])
+        self.assertIn('清理源目录失败', out)
+
+    def refresh(self, lines):
+        with mock.patch.object(launcher, 'run', return_value=iter(lines)), \
+             mock.patch.object(launcher.spin, 'set'), \
+             mock.patch.object(launcher.spin, 'hide'), \
+             redirect_stdout(io.StringIO()):
+            return launcher.do_refresh(Path('lib'))
+
+    def test_gallery_collected_marker(self):
+        self.assertEqual(self.refresh(['gallery-collected=7']), 7)
+
+    def test_gallery_missing_marker_counts_as_failure(self):
+        """拿不到收录数说明子进程没正常跑完，不能当成 0 部"""
+        self.assertEqual(self.refresh(['一些无关输出']), 0)
 
 
 if __name__ == '__main__':

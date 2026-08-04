@@ -45,7 +45,8 @@ def is_registered():
 def register():
     """把协议注册到当前用户。返回 (是否成功, 说明)"""
     if os.name != 'nt':
-        return False, '仅 Windows 支持自定义协议'
+        from .i18n import tr
+        return False, tr('仅 Windows 支持自定义协议')
     try:
         import winreg
         base = rf'Software\Classes\{SCHEME}'

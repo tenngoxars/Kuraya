@@ -152,5 +152,31 @@ class Sleep(unittest.TestCase):
         self.assertEqual(settings.load()['player'], 'D:\\player.exe')
 
 
+class UpdateState(unittest.TestCase):
+    """更新检查的缓存读写，与「已询问PATH」同在「状态」段"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / '设置.ini'
+        self.addCleanup(self.tmp.cleanup)
+        patcher = mock.patch.object(settings, 'SETTINGS_FILE', self.path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_default_when_absent(self):
+        self.assertEqual(settings.update_state(), {'checked': '', 'latest': ''})
+
+    def test_save_and_read(self):
+        settings.save_update_state('1700000000', '0.3.0')
+        self.assertEqual(settings.update_state(),
+                         {'checked': '1700000000', 'latest': '0.3.0'})
+
+    def test_survives_other_save(self):
+        """界面改设置会整份重写文件，不能把更新缓存冲掉"""
+        settings.save_update_state('1700000000', '0.3.0')
+        settings.save(player='D:\\player.exe')
+        self.assertEqual(settings.update_state()['latest'], '0.3.0')
+
+
 if __name__ == '__main__':
     unittest.main()

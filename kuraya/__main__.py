@@ -13,6 +13,7 @@ import sys
 import threading
 
 from . import protocol, settings
+from .i18n import tr
 from .settings import FROZEN
 
 # 退出码：供脚本判断结果
@@ -50,7 +51,8 @@ def resolve_paths(launcher, library_opt=None, source_opt=None):
     if library_opt:
         return settings.ensure_dirs(library_opt, source_opt or '', create_library=False)
 
-    paths = launcher.load_paths()
+    from . import setup
+    paths = setup.load_paths()
     if paths is None:
         return None
     library, source = paths
@@ -84,10 +86,10 @@ def do_register(quiet=False):
     ok, why = protocol.register()
     if not quiet:
         if ok:
-            print('  已注册 kuraya: 协议，片库页面可以直接唤起播放器。')
+            print(tr("  已注册 kuraya: 协议，片库页面可以直接唤起播放器。"))
         else:
-            print(f'  注册失败：{why}')
-            print('  若被安全软件拦截，可将本程序加入白名单后重试。')
+            print(tr("  注册失败：{why}", why=why))
+            print(tr("  若被安全软件拦截，可将本程序加入白名单后重试。"))
     return OK if ok else 1
 
 
@@ -96,17 +98,17 @@ def do_install(remove=False):
     from . import pathenv
     if remove:
         ok, why = pathenv.uninstall()
-        print('  已取消。以后需要打开程序，请到程序所在文件夹双击。'
-              if ok else f'  取消失败：{why}')
+        print(tr("  已取消。以后需要打开程序，请到程序所在文件夹双击。")
+              if ok else tr("  取消失败：{why}", why=why))
         return OK if ok else 1
 
     ok, why = pathenv.install()
     if ok:
-        print('  设置完成。')
-        print('  下次新打开一个命令行窗口，输入 kuraya 就能启动。')
-        print('  （当前已经打开的窗口不会生效，需要新开一个）')
+        print(tr("  设置完成。"))
+        print(tr("  下次新打开一个命令行窗口，输入 kuraya 就能启动。"))
+        print(tr("  （当前已经打开的窗口不会生效，需要新开一个）"))
     else:
-        print(f'  设置失败：{why}')
+        print(tr("  设置失败：{why}", why=why))
     return OK if ok else 1
 
 
@@ -125,16 +127,16 @@ def do_selftest():
             pass
 
     from .media import javbus
-    print('  正在核对 javbus 的解析规则，需要联网……')
+    print(tr("  正在核对 javbus 的解析规则，需要联网……"))
     print()
     failed = javbus.selftest()
     print()
     if failed:
-        print(f'  {failed} 个番号未能取全字段。')
-        print('  若全部失败，多半是站点改版或网络不通；')
-        print('  个别失败通常是该条目本身信息不全，可以忽略。')
+        print(tr("  {failed} 个番号未能取全字段。", failed=failed))
+        print(tr("  若全部失败，多半是站点改版或网络不通；"))
+        print(tr("  个别失败通常是该条目本身信息不全，可以忽略。"))
         return PARTIAL
-    print('  解析规则正常。')
+    print(tr("  解析规则正常。"))
     return OK
 
 
@@ -150,13 +152,13 @@ def do_config(args):
 
     if changed:
         cfg = settings.save(**changed)
-        print('  已保存：', settings.SETTINGS_FILE)
+        print(tr("  已保存："), settings.SETTINGS_FILE)
     else:
         cfg = settings.load()
 
-    print(f'  影片库  {cfg["library"] or "(未设置)"}')
-    print(f'  待整理  {cfg["source"] or "(未设置)"}')
-    print(f'  播放器  {cfg["player"] or "(使用系统默认程序)"}')
+    print(f'  {tr("影片库")}  {cfg["library"] or tr("(未设置)")}')
+    print(f'  {tr("待整理")}  {cfg["source"] or tr("(未设置)")}')
+    print(f'  {tr("播放器")}  {cfg["player"] or tr("(使用系统默认程序)")}')
     return OK if cfg['configured'] else CONFIG_ERROR
 
 
@@ -167,51 +169,52 @@ def build_parser():
     # default=SUPPRESS 保证未指定时不产生属性，避免子命令的默认值覆盖前置写法。
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument('--library', default=argparse.SUPPRESS,
-                        help='本次使用的影片库目录，覆盖配置')
+                        help=tr("本次使用的影片库目录，覆盖配置"))
     common.add_argument('--source', default=argparse.SUPPRESS,
-                        help='本次使用的待整理目录，覆盖配置')
+                        help=tr("本次使用的待整理目录，覆盖配置"))
     common.add_argument('--limit', type=int, default=argparse.SUPPRESS,
-                        help='最多处理多少部')
+                        help=tr("最多处理多少部"))
     common.add_argument('--dry-run', action='store_true', default=argparse.SUPPRESS,
-                        help='只显示将要处理的内容，不改动文件')
+                        help=tr("只显示将要处理的内容，不改动文件"))
     common.add_argument('-q', '--quiet', action='store_true', default=argparse.SUPPRESS,
-                        help='精简输出，供脚本调用')
+                        help=tr("精简输出，供脚本调用"))
     common.add_argument('-v', '--verbose', action='store_true', default=argparse.SUPPRESS,
-                        help='输出各步骤的原始日志')
+                        help=tr("输出各步骤的原始日志"))
     common.add_argument('--yes', action='store_true', default=argparse.SUPPRESS,
-                        help='结束后不等待按键，供计划任务调用')
+                        help=tr("结束后不等待按键，供计划任务调用"))
 
     from . import KANJI, NAME, TAGLINE, __version__
 
     p = argparse.ArgumentParser(
         prog='kuraya', parents=[common],
         description=f'◈  {" ".join(NAME)}   {KANJI}\n\n'
-                    f'{TAGLINE}。不带参数运行则执行完整入库流程。',
+                    f'{tr(TAGLINE)}{tr("。不带参数运行则执行完整入库流程。")}',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='示例：\n'
-               '  kuraya                     完整流程：刮削 → 清理 → 重建页面\n'
-               '  kuraya scrape --limit 3    只刮削前 3 部，用于试跑\n'
-               '  kuraya rebuild -v          重建页面并输出详细日志\n'
-               '  kuraya selftest            刮不到时先跑这条，确认是不是站点改版\n'
-               '  kuraya config --set-library D:\\Media\\Library\n')
+        epilog=tr("示例：\n"
+                  '  kuraya                     完整流程：刮削 → 清理 → 重建页面\n'
+                  '  kuraya scrape --limit 3    只刮削前 3 部，用于试跑\n'
+                  '  kuraya rebuild -v          重建页面并输出详细日志\n'
+                  '  kuraya selftest            刮不到时先跑这条，确认是不是站点改版\n'
+                  '  kuraya config --set-library D:\\Media\\Library\n'))
     p.add_argument('--version', action='version',
                    version=f'{NAME} {KANJI}  v{__version__}')
 
-    sub = p.add_subparsers(dest='command', metavar='命令')
-    sub.add_parser('scrape', parents=[common], help='只刮削与清理，不重建页面')
-    sub.add_parser('rebuild', parents=[common], help='只重建片库页面')
-    sub.add_parser('selftest', parents=[common], help='核对数据源解析规则是否仍有效')
-    sub.add_parser('register', parents=[common], help='重新注册 kuraya: 协议')
-    sub.add_parser('install', parents=[common], help='设置为在任意窗口输入 kuraya 即可启动')
-    sub.add_parser('uninstall', parents=[common], help='取消上述设置')
+    sub = p.add_subparsers(dest='command', metavar=tr("命令"))
+    sub.add_parser('scrape', parents=[common], help=tr("只刮削与清理，不重建页面"))
+    sub.add_parser('rebuild', parents=[common], help=tr("只重建片库页面"))
+    sub.add_parser('selftest', parents=[common], help=tr("核对数据源解析规则是否仍有效"))
+    sub.add_parser('update', parents=[common], help=tr("检查并安装新版本"))
+    sub.add_parser('register', parents=[common], help=tr("重新注册 kuraya: 协议"))
+    sub.add_parser('install', parents=[common], help=tr("设置为在任意窗口输入 kuraya 即可启动"))
+    sub.add_parser('uninstall', parents=[common], help=tr("取消上述设置"))
 
-    play = sub.add_parser('play', parents=[common], help='播放指定文件')
-    play.add_argument('target', help='影片路径')
+    play = sub.add_parser('play', parents=[common], help=tr("播放指定文件"))
+    play.add_argument('target', help=tr("影片路径"))
 
-    conf = sub.add_parser('config', parents=[common], help='查看或修改配置')
-    conf.add_argument('--set-library', help='设置影片库目录')
-    conf.add_argument('--set-source', help='设置待整理目录，留空则用默认位置')
-    conf.add_argument('--set-player', help='设置播放器路径，留空则用系统默认程序')
+    conf = sub.add_parser('config', parents=[common], help=tr("查看或修改配置"))
+    conf.add_argument('--set-library', help=tr("设置影片库目录"))
+    conf.add_argument('--set-source', help=tr("设置待整理目录，留空则用默认位置"))
+    conf.add_argument('--set-player', help=tr("设置播放器路径，留空则用系统默认程序"))
 
     return p
 
@@ -246,6 +249,9 @@ def main():
         return do_play(args.target)
     if args.command == 'selftest':
         return do_selftest()
+    if args.command == 'update':
+        from . import updater
+        return updater.update(yes=opt('yes', False), quiet=opt('quiet', False))
     if args.command == 'register':
         return do_register(opt('quiet', False))
     if args.command in ('install', 'uninstall'):
@@ -262,14 +268,16 @@ def main():
     protocol.ensure_registered()
     code = OK
     try:
+        from . import updater
+        updater.show()
         launcher.say()
         try:
             paths = resolve_paths(launcher, opt('library'), opt('source'))
         except settings.LibraryMissing as exc:
-            launcher.show_error(exc)
+            setup.show_error(exc)
             return CONFIG_ERROR
         except launcher.ConfigError as exc:
-            launcher.show_error(exc)
+            setup.show_error(exc)
             return CONFIG_ERROR
         if paths is None:
             return CONFIG_ERROR
@@ -292,18 +300,19 @@ def main():
     except Exception as exc:
         # 兜底：未预料的异常也要让用户看见，不能只留一个空窗口
         import traceback
-        launcher.show_error(f'{type(exc).__name__}: {exc}')
+        setup.show_error(f'{type(exc).__name__}: {exc}')
         if opt('verbose', False):
             traceback.print_exc()
         else:
-            launcher.say(f'  {launcher.C.GREY}加 -v 可查看完整调用栈{launcher.C.RESET}')
+            launcher.say(f'  {launcher.C.GREY}{tr("加 -v 可查看完整调用栈")}'
+                         f'{launcher.C.RESET}')
         code = CONFIG_ERROR
     finally:
         launcher.spin.stop()
         # 双击 EXE 时窗口会随进程一起关掉，需要停住让人看结果。
         # 装成命令行工具后是在终端里跑的，输出留在屏幕上，再等一下回车纯属碍事
         if FROZEN and not opt('yes', False) and not opt('quiet', False):
-            launcher.wait_exit()
+            setup.wait_exit()
     return code
 
 

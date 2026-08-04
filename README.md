@@ -57,7 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh |
 双击运行进入菜单：
 
 ```
-◈  K U R A Y A   蔵屋                                 v0.1.0
+◈  K U R A Y A   蔵屋                                 v0.3.0
 ────────────────────────────────────────────────────────────
   影片库  D:\Media\Library                          100 部
   待整理  D:\Media\Library\待整理                   2 个文件
@@ -66,6 +66,7 @@ curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh |
   2  重建页面      重新扫描片库并生成 index.html
   3  打开片库      在浏览器中查看
   4  设置          影片库位置、待整理目录、播放器
+  5  更新          检查并安装新版本
   0  退出
 ```
 
@@ -76,10 +77,13 @@ kuraya                     完整流程：刮削 → 清理 → 重建页面
 kuraya scrape --limit 3    只刮削前 3 部，用于试跑
 kuraya rebuild             只重建片库页面
 kuraya selftest            核对数据源解析规则是否仍有效
+kuraya update              检查并安装新版本
 kuraya config              查看配置
 kuraya --dry-run           只显示将要处理的内容，不改动文件
 kuraya --quiet --yes       精简输出、不等待按键，供计划任务使用
 ```
+
+界面语言跟随系统：系统语言为繁体中文（港台澳）时显示繁体，其他语言显示英文，简体中文为默认。
 
 ## 支持范围
 

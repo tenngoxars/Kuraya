@@ -10,7 +10,8 @@ import re
 import subprocess
 import sys
 
-from . import launcher, picker, settings
+from . import launcher, picker, settings, setup, updater
+from .i18n import tr
 from .launcher import C, W, brand, dw, rule, say
 
 
@@ -88,22 +89,29 @@ def draw(library, source):
     rule()
     say()
 
-    entry('1', '刮削入库', '处理待整理目录并归入片库')
-    entry('2', '重建页面', '重新扫描片库并生成 index.html')
-    entry('3', '打开片库', '在浏览器中查看')
-    entry('4', '设置', '影片库位置、待整理目录、播放器')
-    entry('0', '退出', '')
+    # 有新版本时每轮都提示，直到升级
+    notice = updater.text()
+    if notice:
+        say(notice)
+        say()
+
+    entry('1', tr("刮削入库"), tr("处理待整理目录并归入片库"))
+    entry('2', tr("重建页面"), tr("重新扫描片库并生成 index.html"))
+    entry('3', tr("打开片库"), tr("在浏览器中查看"))
+    entry('4', tr("设置"), tr("影片库位置、待整理目录、播放器"))
+    entry('5', tr("更新"), tr("检查并安装新版本"))
+    entry('0', tr("退出"), '')
     say()
 
 
 def pause():
     try:
-        input(f'\n  {C.FAINT}按回车返回菜单{C.RESET}')
+        input(f'\n  {C.FAINT}{tr("按回车返回菜单")}{C.RESET}')
     except (EOFError, KeyboardInterrupt):
         pass
 
 
-def ask(prompt='请选择'):
+def ask(prompt=tr("请选择")):
     try:
         return input(f'  {prompt} {C.GOLD}›{C.RESET} ').strip()
     except (EOFError, KeyboardInterrupt):
@@ -114,7 +122,7 @@ def open_library(library):
     """用默认浏览器打开片库页面"""
     index = os.path.join(str(library), 'index.html')
     if not os.path.isfile(index):
-        say(f'    {C.RED}✕ 页面尚未生成，请先执行「重建页面」{C.RESET}')
+        say(f'    {C.RED}✕ {tr("页面尚未生成，请先执行「重建页面」")}{C.RESET}')
         return
     try:
         if os.name == 'nt':
@@ -123,47 +131,55 @@ def open_library(library):
             subprocess.Popen(['open', index])
         else:
             subprocess.Popen(['xdg-open', index])
-        say(f'    {C.GREEN}✓{C.RESET} 已在浏览器中打开')
+        say(f'    {C.GREEN}✓{C.RESET} {tr("已在浏览器中打开")}')
     except OSError as exc:
-        say(f'    {C.RED}✕ 打开失败：{exc}{C.RESET}')
+        open_err = tr('打开失败：{exc}', exc=exc)
+        say(f'    {C.RED}✕ {open_err}{C.RESET}')
 
 
 def edit_setting(label, key, kind='folder'):
     """弹出选择框修改单项设置"""
-    say(f'  {C.GOLD}▸{C.RESET} 即将弹出选择窗口：{label}')
-    launcher.spin.set('等待选择')
+    pick_msg = tr('即将弹出选择窗口：{label}', label=label)
+    say(f'  {C.GOLD}▸{C.RESET} {pick_msg}')
+    launcher.spin.set(tr('等待选择'))
     path, err = picker.pick(kind, label)
     launcher.spin.hide()
 
     if err:
         # 无桌面/无 tkinter 的环境改为手动输入，不把设置堵死
-        say(f'    {C.RED}✕ 无法打开选择窗口：{err}{C.RESET}')
+        pick_err = tr('无法打开选择窗口：{err}', err=err)
+        say(f'    {C.RED}✕ {pick_err}{C.RESET}')
         path = ask_path(label, kind)
         if not path:
-            say(f'    {C.GREY}已取消{C.RESET}')
+            say(f'    {C.GREY}{tr("已取消")}{C.RESET}')
             return
     elif not path:
-        say(f'    {C.GREY}已取消{C.RESET}')
+        say(f'    {C.GREY}{tr("已取消")}{C.RESET}')
         return
     settings.save(**{key: path})
-    say(f'    {C.GREEN}✓{C.RESET} 已保存：{path}')
+    saved = tr('已保存：{path}', path=path)
+    say(f'    {C.GREEN}✓{C.RESET} {saved}')
 
 
 def ask_path(label, kind='folder'):
     """选择框用不了时改为终端输入（与首次引导的手动输入同款）"""
-    say(f'    {C.GREY}改为手动输入，路径支持 ~ 展开{C.RESET}')
+    manual_msg = tr('改为手动输入，路径支持 ~ 展开')
+    say(f'    {C.GREY}{manual_msg}{C.RESET}')
     try:
-        raw = input(f'  {label}路径（回车取消） {C.GOLD}›{C.RESET} ').strip().strip('"\'')
+        path_prompt = tr('{label}路径（回车取消）', label=label)
+        raw = input(f'  {path_prompt} {C.GOLD}›{C.RESET} ').strip().strip('"\'')
     except (EOFError, KeyboardInterrupt):
         return ''
     if not raw:
         return ''
     path = os.path.expanduser(raw)
     if kind == 'folder' and not os.path.isdir(path):
-        say(f'    {C.RED}✕{C.RESET} 目录不存在：{path}')
+        missing = tr('目录不存在：{path}', path=path)
+        say(f'    {C.RED}✕{C.RESET} {missing}')
         return ''
     if kind == 'file' and not os.path.isfile(path):
-        say(f'    {C.RED}✕{C.RESET} 文件不存在：{path}（留空可使用系统默认播放器）')
+        missing = tr('文件不存在：{path}（留空可使用系统默认播放器）', path=path)
+        say(f'    {C.RED}✕{C.RESET} {missing}')
         return ''
     return path
 
@@ -175,29 +191,29 @@ def settings_menu():
         say()
         brand()
         say()
-        say(f'  {C.BOLD}设置{C.RESET}')
+        say(f'  {C.BOLD}{tr("设置")}{C.RESET}')
         say()
-        status_line('影片库', cfg['library'] or '(未设置)')
-        status_line('待整理', cfg['source'] or '(默认为影片库下的「待整理」)')
-        status_line('播放器', cfg['player'] or '(使用系统默认程序)')
+        status_line(tr("影片库"), cfg['library'] or tr("(未设置)"))
+        status_line(tr("待整理"), cfg['source'] or tr("(默认为影片库下的「待整理」)"))
+        status_line(tr("播放器"), cfg['player'] or tr("(使用系统默认程序)"))
         say()
         rule()
         say()
-        entry('1', '影片库', '整理好的影片存放位置')
-        entry('2', '待整理', '新下载的影片放这里')
-        entry('3', '播放器', '留空则用系统默认程序')
-        entry('0', '返回', '')
+        entry('1', tr("影片库"), tr("整理好的影片存放位置"))
+        entry('2', tr("待整理"), tr("新下载的影片放这里"))
+        entry('3', tr("播放器"), tr("留空则用系统默认程序"))
+        entry('0', tr("返回"), '')
         say()
 
         choice = ask()
         if choice == '0':
             return
         if choice == '1':
-            edit_setting('选择影片库目录', 'library')
+            edit_setting(tr("选择影片库目录"), 'library')
         elif choice == '2':
-            edit_setting('选择待整理目录', 'source')
+            edit_setting(tr("选择待整理目录"), 'source')
         elif choice == '3':
-            edit_setting('选择播放器程序', 'player', kind='file')
+            edit_setting(tr("选择播放器程序"), 'player', kind='file')
         else:
             continue
         pause()
@@ -212,8 +228,8 @@ def run():
         if not cfg['configured']:
             # 未配置时先走引导，完成后再进菜单
             say()
-            if launcher.first_run_setup() is None:
-                launcher.wait_exit()
+            if setup.first_run_setup() is None:
+                setup.wait_exit()
                 return 2
             continue
 
@@ -221,9 +237,9 @@ def run():
             library, source = settings.ensure_dirs(cfg['library'], cfg['source'])
         except settings.LibraryMissing as exc:
             say()
-            launcher.show_error(exc)
+            setup.show_error(exc)
             say()
-            say(f'  {C.GREY}请选择「设置」重新指定影片库位置{C.RESET}')
+            say(f'  {C.GREY}{tr("请选择「设置」重新指定影片库位置")}{C.RESET}')
             pause()
             settings_menu()
             continue
@@ -249,3 +265,7 @@ def run():
             pause()
         elif choice == '4':
             settings_menu()
+        elif choice == '5':
+            say()
+            updater.update()
+            pause()

@@ -12,6 +12,8 @@ import os
 import subprocess
 import sys
 
+from .i18n import tr
+
 # 用一个 TopMost 窗体作为宿主，避免对话框被浏览器窗口盖住。
 # 必须先 Show 再 Hide，让窗体真正创建出句柄，否则 ShowDialog 会抛异常。
 _PS = """
@@ -39,7 +41,7 @@ if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {{
 _FILE = """
 $d = New-Object System.Windows.Forms.OpenFileDialog
 $d.Title = '{title}'
-$d.Filter = '可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*'
+$d.Filter = '{exe_filter}'
 if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {{
     [Console]::Out.WriteLine($d.FileName)
 }}
@@ -60,7 +62,7 @@ def _powershell(script):
             print(f'  [选择框] 找不到 {exe}，换下一个', flush=True)
             continue
         except subprocess.TimeoutExpired:
-            return '', '选择框超时未关闭'
+            return '', tr('选择框超时未关闭')
         except Exception as exc:
             print(f'  [选择框] 启动失败 {type(exc).__name__}: {exc}', flush=True)
             return '', f'{type(exc).__name__}: {exc}'
@@ -72,7 +74,7 @@ def _powershell(script):
         if out:
             return out, ''
         return '', err
-    return '', '系统中找不到 powershell'
+    return '', tr('系统中找不到 powershell')
 
 
 def _osascript(kind, title):
@@ -87,7 +89,7 @@ def _osascript(kind, title):
         out = subprocess.run(['osascript', '-e', script],
                              capture_output=True, text=True, timeout=300)
     except subprocess.TimeoutExpired:
-        return '', '选择框超时未关闭'
+        return '', tr('选择框超时未关闭')
     except (OSError, subprocess.SubprocessError) as exc:
         return '', f'{type(exc).__name__}: {exc}'
     path = out.stdout.strip()
@@ -97,7 +99,7 @@ def _osascript(kind, title):
     # 用户取消：osascript 退出 1 且提示 User canceled，与「未选择」同义
     if 'User canceled' in err:
         return '', ''
-    return '', err or f'osascript 退出码 {out.returncode}'
+    return '', err or tr('osascript 退出码 {code}', code=out.returncode)
 
 
 def _tk(kind, title):
@@ -118,7 +120,9 @@ def _tk(kind, title):
 def pick(kind='folder', title='请选择'):
     """弹出选择框。返回 (路径, 错误)，用户取消时两者都为空。"""
     if os.name == 'nt':
-        body = (_FOLDER if kind == 'folder' else _FILE).format(title=title)
+        body = (_FOLDER if kind == 'folder' else _FILE).format(
+            title=title,
+            exe_filter=tr('可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*'))
         path, err = _powershell(_PS.format(dialog=body))
         if path:
             return os.path.normpath(path), ''
@@ -131,7 +135,7 @@ def pick(kind='folder', title='请选择'):
 
 
 if __name__ == '__main__':
-    print('正在弹出目录选择框，请查看是否出现窗口...')
-    path, err = pick('folder', '诊断测试')
-    print('  选中路径:', path or '(空)')
-    print('  错误信息:', err or '(无)')
+    print(tr('正在弹出目录选择框，请查看是否出现窗口...'))
+    path, err = pick('folder', tr('诊断测试'))
+    print(tr('  选中路径:') , path or tr('(空)'))
+    print(tr('  错误信息:'), err or tr('(无)'))

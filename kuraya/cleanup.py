@@ -13,6 +13,13 @@ import os
 import shutil
 import sys
 
+# 多语言：裸脚本运行时包不在搜索路径，tr 回退原文
+try:
+    from kuraya.i18n import tr
+except ImportError:
+    def tr(text, **kw):
+        return text.format(**kw) if kw else text
+
 try:
     from kuraya.settings import VIDEO_EXTS
 except ImportError:
@@ -20,12 +27,12 @@ except ImportError:
     VIDEO_EXTS = ('.mp4', '.avi', '.mkv', '.wmv', '.ts', '.mov', '.m4v', '.rmvb', '.iso', '.mpg')
 
 if len(sys.argv) < 2:
-    raise SystemExit('用法: python cleanup.py <待整理目录> [影片库目录]')
+    raise SystemExit(tr('用法: python cleanup.py <待整理目录> [影片库目录]'))
 SOURCE = os.path.abspath(sys.argv[1])
 LIBRARY = os.path.abspath(sys.argv[2]) if len(sys.argv) > 2 else ''
 
 if not os.path.isdir(SOURCE):
-    raise SystemExit(f'源目录不存在: {SOURCE}')
+    raise SystemExit(tr('源目录不存在: {source}', source=SOURCE))
 
 
 def library_inodes():
@@ -69,7 +76,7 @@ for name in sorted(os.listdir(SOURCE)):
     if not videos:
         shutil.rmtree(folder)
         removed += 1
-        print(f'[清理] {name}')
+        print(f'[cleanup:rm] {name}')
         continue
 
     # 视频还在：看它是不是已经在影片库里（同一 inode 即同一份文件）
@@ -81,9 +88,11 @@ for name in sorted(os.listdir(SOURCE)):
     if already and in_library:
         shutil.rmtree(folder)
         linked += 1
-        print(f'[已入库] {name}')
+        print(f'[cleanup:linked] {name}')
     else:
         kept += 1
-        print(f'[保留] {name}')
+        print(f'[cleanup:kept] {name}')
 
-print(f'\n清理完成：删除 {removed} 个，移除已入库的 {linked} 个，保留待重试 {kept} 个。')
+print(tr('\n清理完成：删除 {removed} 个，移除已入库的 {linked} 个，'
+          '保留待重试 {kept} 个。',
+          removed=removed, linked=linked, kept=kept))

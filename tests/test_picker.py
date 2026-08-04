@@ -10,6 +10,9 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+from kuraya import i18n as _i18n
+_i18n._lang = _i18n.ZH_CN  # 测试断言简体中文文案，固定语言
+
 from kuraya import picker
 
 

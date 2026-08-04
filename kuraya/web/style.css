@@ -20,7 +20,10 @@
 
   body {
     margin: 0;
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    /* 只走系统原生字体：不随包分发字体文件，声明未分发的字体是空承诺。
+       必须保留 sans-serif 兜底，否则浏览器默认退回衬线体 */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 "PingFang SC", "Microsoft YaHei", sans-serif;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;

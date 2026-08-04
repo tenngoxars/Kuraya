@@ -21,6 +21,14 @@ if not os.path.isdir(BASE):
 # 非演员目录，扫描时跳过
 SKIP = {"待整理", "Kuraya", "kuraya"}
 
+# 视频扩展名（与 settings 共用一份，这里保证裸脚本运行也能用）。
+# 注意：必须在下方扫描循环之前定义，否则有影片归档后直接 NameError
+try:
+    from kuraya.settings import VIDEO_EXTS
+except ImportError:
+    # 直接以脚本方式运行时包不在搜索路径，按同值回退
+    VIDEO_EXTS = ('.mp4', '.avi', '.mkv', '.wmv', '.ts', '.mov', '.m4v', '.rmvb', '.iso', '.mpg')
+
 def rel_url(*parts):
     return "/".join(quote(p) for p in parts)
 
@@ -112,11 +120,10 @@ items.sort(key=lambda x: (x["date"] or "0000-00-00"), reverse=True)
 
 # 界面模板与数据分离：模板随包走，数据在此注入，输出为单文件页面
 try:
-    from kuraya.settings import VIDEO_EXTS, WEB_DIR
+    from kuraya.settings import WEB_DIR
 except ImportError:
     # 直接以脚本方式运行时包不在搜索路径，按本文件位置推算
     WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
-    VIDEO_EXTS = ('.mp4', '.avi', '.mkv', '.wmv', '.ts', '.mov', '.m4v', '.rmvb', '.iso', '.mpg')
 
 
 def read_web(name):

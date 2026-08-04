@@ -224,6 +224,22 @@ class Download(unittest.TestCase):
                 with self.assertRaises(updater.UpdateError):
                     updater._download('0.3.0')
 
+    def test_unix_exec_permission_restored(self):
+        """zipfile 不保留 Unix 权限位，须从 external_attr 恢复，
+        否则可执行文件失去 +x，自更新后无法运行"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'x' / 'Kuraya'
+            root.mkdir(parents=True)
+            info = zipfile.ZipInfo('Kuraya/Kuraya')
+            info.external_attr = 0o755 << 16      # 模拟 unzip/zip 存的权限
+            with zipfile.ZipFile(Path(tmp) / 'pkg.zip', 'w') as zf:
+                zf.writestr(info, b'#!/bin/sh\n')
+            with self.fake_get(Path(tmp) / 'pkg.zip'):
+                new, tmp_root = updater._download('0.3.0')
+            mode = (new / 'Kuraya').stat().st_mode
+            self.assertTrue(mode & 0o111, f'可执行位丢失: {oct(mode)}')
+            self.addCleanup(shutil.rmtree, tmp_root, ignore_errors=True)
+
 
 class Replace(unittest.TestCase):
     """替换顺序：旧目录改名 .old → 新目录就位 → 删旧；失败恢复"""

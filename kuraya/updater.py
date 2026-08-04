@@ -339,6 +339,15 @@ def _download(version):
                     fp.write(chunk)
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(tmp / 'x')
+            # zipfile 不保留 Unix 权限位（unzip 命令会），
+            # 从 external_attr 恢复，否则可执行文件失去 +x 无法运行
+            for info in zf.infolist():
+                perm = (info.external_attr >> 16) & 0o7777
+                if perm:
+                    try:
+                        (tmp / 'x' / info.filename).chmod(perm)
+                    except OSError:
+                        pass
     except UpdateError:
         raise
     except (requests.RequestException, OSError, zipfile.BadZipFile) as exc:

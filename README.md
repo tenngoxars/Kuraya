@@ -22,13 +22,24 @@
 
 ## 安装
 
-## 安装
+**推荐命令行安装**（装好后在终端输入 `kuraya`即可运行）：
 
-**推荐命令行安装**（装好后可在任意终端输入 `kuraya`）：
+- macOS
+  
+```
+brew install tenngoxars/tap/kuraya
+```
+- Windows
 
-- macOS：`brew install tenngoxars/tap/kuraya`
-- Windows：`irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 | iex`
-- Linux：`curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh | bash`
+```
+irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 | iex
+```
+
+- Linux
+  
+```
+curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh | bash
+```
 
 **升级**：运行 `kuraya update` 自动检查并安装新版本（Homebrew 安装的用 `brew upgrade kuraya`）。
 

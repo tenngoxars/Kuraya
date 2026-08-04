@@ -132,6 +132,8 @@ def load():
         'player': player,
         'sleep': _sleep(cfg),
         'configured': bool(library),
+        # 界面语言：空串表示跟随系统；其余为 zh-CN / zh-TW / en
+        'language': cfg.get('界面', '语言', fallback='').strip(),
         # 是否已询问过加入 PATH，避免每次启动重复打扰
         'path_asked': cfg.get('状态', '已询问PATH', fallback='').strip(),
     }
@@ -153,7 +155,7 @@ def _write(cfg):
         cfg.write(fp)
 
 
-def save(library=None, source=None, player=None, path_asked=None):
+def save(library=None, source=None, player=None, path_asked=None, language=None):
     """写入配置。传 None 的项保持原值"""
     cfg = _read()
     if library is not None:
@@ -166,6 +168,10 @@ def save(library=None, source=None, player=None, path_asked=None):
         if not cfg.has_section('状态'):
             cfg.add_section('状态')
         cfg.set('状态', '已询问PATH', path_asked)
+    if language is not None:
+        if not cfg.has_section('界面'):
+            cfg.add_section('界面')
+        cfg.set('界面', '语言', language)
 
     _write(cfg)
     return load()

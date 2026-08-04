@@ -161,5 +161,38 @@ class TableIntegrity(unittest.TestCase):
         self.assertLess(len(unchanged), 30)
 
 
+class ConfiguredLanguage(unittest.TestCase):
+    """设置里选定的语言优先于系统检测，refresh 后立即生效"""
+
+    def setUp(self):
+        # patch 退出时自动恢复 _lang 原值，避免 refresh 污染其他断言中文的测试
+        self.lang = mock.patch.object(i18n, '_lang', None).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def current(self, language):
+        i18n.refresh()
+        with mock.patch('kuraya.settings.load',
+                        return_value={'language': language}):
+            return i18n.current()
+
+    def test_config_overrides_system(self):
+        self.assertEqual(self.current('zh-TW'), ZH_TW)
+        self.assertEqual(self.current('en'), EN)
+        self.assertEqual(self.current('zh-CN'), ZH_CN)
+
+    def test_empty_config_falls_back_to_system(self):
+        with mock.patch.object(i18n, 'detect_lang', return_value=EN):
+            self.assertEqual(self.current(''), EN)
+
+    def test_refresh_clears_cache(self):
+        with mock.patch('kuraya.settings.load',
+                        return_value={'language': 'zh-CN'}):
+            self.assertEqual(i18n.current(), ZH_CN)
+            with mock.patch('kuraya.settings.load',
+                            return_value={'language': 'en'}):
+                i18n.refresh()
+                self.assertEqual(i18n.current(), EN)
+
+
 if __name__ == '__main__':
     unittest.main()

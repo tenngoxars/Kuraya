@@ -57,11 +57,23 @@ def detect_lang():
 
 
 def current():
-    """当前语言，进程内缓存"""
+    """当前语言，进程内缓存。设置里选定的语言优先于系统检测"""
     global _lang
     if _lang is None:
-        _lang = detect_lang()
+        from . import settings
+        configured = settings.load().get('language', '').strip().lower()
+        _lang = _CONFIG_LANGS.get(configured) or detect_lang()
     return _lang
+
+
+def refresh():
+    """清空语言缓存。设置里切换语言后调用，让后续文案立即生效"""
+    global _lang
+    _lang = None
+
+
+# 设置里可选的语言（空串 = 跟随系统）
+_CONFIG_LANGS = {'zh-cn': ZH_CN, 'zh-tw': ZH_TW, 'zh-hk': ZH_TW, 'en': EN}
 
 
 def tr(text, **kw):

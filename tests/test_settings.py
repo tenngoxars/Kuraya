@@ -178,5 +178,34 @@ class UpdateState(unittest.TestCase):
         self.assertEqual(settings.update_state()['latest'], '0.3.0')
 
 
+class Language(unittest.TestCase):
+    """界面语言配置：空串跟随系统，其余为语言代码"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / '设置.ini'
+        self.addCleanup(self.tmp.cleanup)
+        patcher = mock.patch.object(settings, 'SETTINGS_FILE', self.path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_default_is_empty(self):
+        self.assertEqual(settings.load()['language'], '')
+
+    def test_save_and_read(self):
+        settings.save(language='zh-TW')
+        self.assertEqual(settings.load()['language'], 'zh-TW')
+
+    def test_clear_restores_follow_system(self):
+        settings.save(language='en')
+        settings.save(language='')
+        self.assertEqual(settings.load()['language'], '')
+
+    def test_survives_other_saves(self):
+        settings.save(language='zh-CN')
+        settings.save(player='D:\\player.exe')
+        self.assertEqual(settings.load()['language'], 'zh-CN')
+
+
 if __name__ == '__main__':
     unittest.main()

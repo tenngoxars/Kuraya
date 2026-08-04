@@ -187,6 +187,49 @@ def ask_path(label, kind='folder'):
     return path
 
 
+def language_label(code):
+    """语言选项显示名。语言名称用其自身语言书写，不参与翻译"""
+    return {'': tr('跟随系统'), 'zh-CN': '简体中文',
+            'zh-TW': '繁體中文', 'en': 'English'}.get(code, '')
+
+
+def language_menu():
+    """选择界面语言：写入配置并立即生效（无需重启）"""
+    from . import i18n
+    options = [('', tr('跟随系统')), ('zh-CN', '简体中文'),
+               ('zh-TW', '繁體中文'), ('en', 'English')]
+    while True:
+        cfg = settings.load()
+        clear_screen()
+        say()
+        brand()
+        say()
+        say(f'  {C.BOLD}{tr("语言")}{C.RESET}')
+        say()
+        status_line(tr('当前'), language_label(cfg['language']))
+        say()
+        rule()
+        say()
+        for i, (code, label) in enumerate(options, 1):
+            entry(str(i), label, tr('当前') if code == cfg['language'] else '')
+        entry('0', tr('返回'), '')
+        say()
+
+        choice = ask()
+        if choice in ('0', 'esc', 'eof'):
+            return
+        if not choice.isdigit():
+            continue
+        index = int(choice)
+        if not 1 <= index <= len(options):
+            continue
+        code = options[index - 1][0]
+        settings.save(language=code)
+        i18n.refresh()
+        say(f'    {C.GREEN}✓{C.RESET} {tr("已保存")}')
+        pause()
+
+
 def settings_menu():
     while True:
         cfg = settings.load()
@@ -202,21 +245,24 @@ def settings_menu():
         say()
         rule()
         say()
-        entry('1', tr("影片库"), tr("整理好的影片存放位置"))
-        entry('2', tr("待整理"), tr("新下载的影片放这里"))
-        entry('3', tr("播放器"), tr("留空则用系统默认程序"))
-        entry('0', tr("返回"), '')
+        entry('1', tr('影片库'), tr('整理好的影片存放位置'))
+        entry('2', tr('待整理'), tr('新下载的影片放这里'))
+        entry('3', tr('播放器'), tr('留空则用系统默认程序'))
+        entry('4', tr('语言'), tr('界面语言'))
+        entry('0', tr('返回'), '')
         say()
 
         choice = ask()
         if choice in ('0', 'esc', 'eof'):
             return
         if choice == '1':
-            edit_setting(tr("选择影片库目录"), 'library')
+            edit_setting(tr('选择影片库目录'), 'library')
         elif choice == '2':
-            edit_setting(tr("选择待整理目录"), 'source')
+            edit_setting(tr('选择待整理目录'), 'source')
         elif choice == '3':
-            edit_setting(tr("选择播放器程序"), 'player', kind='file')
+            edit_setting(tr('选择播放器程序'), 'player', kind='file')
+        elif choice == '4':
+            language_menu()
         else:
             continue
         pause()

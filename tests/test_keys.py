@@ -20,6 +20,7 @@ def _posix_env(first, rest=b''):
     reads = [first] + ([rest] if rest else [])
     return {
         'os.read': mock.patch.object(keys.os, 'read', side_effect=reads),
+        'isatty': mock.patch.object(keys.os, 'isatty', return_value=True),
         'modules': mock.patch.dict('sys.modules', {
             'termios': termios, 'tty': mock.MagicMock(), 'select': select,
         }),
@@ -36,7 +37,7 @@ class ReadKeyPosix(unittest.TestCase):
 
     def key(self, first, rest=b''):
         env = _posix_env(first, rest)
-        with env['os.read'], env['modules']:
+        with env['os.read'], env['isatty'], env['modules']:
             return keys._read_key_posix()
 
     def test_plain_char(self):
@@ -66,7 +67,7 @@ class ReadKeyPosix(unittest.TestCase):
     def test_raw_mode_restored(self):
         """无论结果如何都要恢复终端模式"""
         env = _posix_env(b'1')
-        with env['os.read'], env['modules']:
+        with env['os.read'], env['isatty'], env['modules']:
             keys._read_key_posix()
         env['termios'].tcsetattr.assert_called_once_with(
             keys.sys.stdin.fileno(), env['termios'].TCSADRAIN, 'old')

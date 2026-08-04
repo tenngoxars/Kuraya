@@ -94,17 +94,19 @@ jobs:
           path: release-assets
       - name: 生成发布说明
         run: |
-          echo "## 安装" > NOTES.md
-          echo '```bash' >> NOTES.md
-          echo "brew install tenngoxars/tap/kuraya" >> NOTES.md
-          echo '```' >> NOTES.md
-          echo "" >> NOTES.md
-          echo "## 各平台包 SHA256（更新 tap formula 时用）" >> NOTES.md
-          echo '```' >> NOTES.md
-          for f in release-assets/*/*.zip; do
-            echo "$(shasum -a 256 "$f" | cut -d' ' -f1)  $(basename "$f")"
-          done >> NOTES.md
-          echo '```' >> NOTES.md
+          {
+            echo "## 安装"
+            echo '```bash'
+            echo "brew install tenngoxars/tap/kuraya"
+            echo '```'
+            echo ""
+            echo "## 各平台包 SHA256（更新 tap formula 时用）"
+            echo '```'
+            for f in release-assets/*/*.zip; do
+              echo "$(shasum -a 256 "$f" | cut -d' ' -f1)  $(basename "$f")"
+            done
+            echo '```'
+          } > NOTES.md
       - name: 创建 Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -144,8 +146,8 @@ jobs:
           VER="${VERSION#v}"
           URL="https://github.com/tenngoxars/Kuraya/releases/download/${VERSION}/Kuraya-${VER}-mac-arm64.zip"
           SHA=$(shasum -a 256 mac-arm64/*.zip | cut -d' ' -f1)
-          sed -i "s|version \".*\"|version \"$VER\"|" Formula/kuraya.rb
-          sed -i "/on_arm do/,/^  end/ s|url \".*\"|url \"$URL\"|; s|sha256 \".*\"|sha256 \"$SHA\"|" Formula/kuraya.rb
+          # version 由 URL 自动推断，只需替换顶层 url/sha256 两行
+          sed -i "s|url \".*\"|url \"$URL\"|; s|sha256 \".*\"|sha256 \"$SHA\"|" Formula/kuraya.rb
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/kuraya.rb

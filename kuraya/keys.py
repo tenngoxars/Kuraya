@@ -66,19 +66,17 @@ def _read_key_posix():
     try:
         tty.setraw(fd)
         ch = os.read(fd, 1)
+        rest = b''
+        if ch == b'\x1b':
+            # 后续字节必须在 raw 模式下读完：提前恢复会把 [B 等字节回显到屏幕
+            while select.select([fd], [], [], 0.06)[0]:
+                rest += os.read(fd, 16)
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
     if not ch:
         return 'eof'
     if ch == b'\x1b':
-        # 可能是真正的 Esc，也可能是方向键等转义序列的开头
-        try:
-            rest = b''
-            while select.select([fd], [], [], 0.06)[0]:
-                rest += os.read(fd, 16)
-        except OSError:
-            rest = b''
         if not rest:
             return 'esc'
         return {b'[A': 'up', b'[B': 'down', b'[C': 'right',

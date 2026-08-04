@@ -2,7 +2,7 @@
 # Kuraya 一键安装脚本(Linux 主用, macOS 也可用)。
 # 从 GitHub Releases 拉取最新版, 装到 ~/.local/opt/kuraya/, 提供 kuraya 命令。
 # 用法:
-#   curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh | bash
+#   curl -fsSL https://kuraya.app/install.sh | bash
 set -euo pipefail
 
 REPO=tenngoxars/Kuraya

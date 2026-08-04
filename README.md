@@ -6,6 +6,8 @@
 
 把散乱的影片文件整理成带封面和元数据的有序收藏，并生成可离线浏览的片库页面。
 
+**官网：[kuraya.app](https://kuraya.app)**
+
 </div>
 
 ---
@@ -32,13 +34,13 @@ brew install tenngoxars/tap/kuraya
 - Windows
 
 ```
-irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 | iex
+irm https://kuraya.app/install.ps1 | iex
 ```
 
 - Linux
   
 ```
-curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh | bash
+curl -fsSL https://kuraya.app/install.sh | bash
 ```
 
 **升级**：运行 `kuraya update` 自动检查并安装新版本（Homebrew 安装的会自动调用 `brew upgrade kuraya`）。

@@ -223,8 +223,7 @@ def update(yes=False, quiet=False):
                         print(f'  {C.GREY}{tr("请退出本程序，稍候片刻再重新打开")}'
                               f'{C.RESET}')
                         fallback = tr('若重新打开后版本未变，请运行安装命令：'
-                                      'irm https://raw.githubusercontent.com/'
-                                      'tenngoxars/Kuraya/main/install.ps1 | iex')
+                                      'irm https://kuraya.app/install.ps1 | iex')
                         print(f'  {C.GREY}{fallback}{C.RESET}')
                     return 0
             if app_old is not None:

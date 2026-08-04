@@ -1,8 +1,8 @@
-﻿# Kuraya 一键安装脚本 (Windows PowerShell 5.1+ / 7)。
+﻿﻿# Kuraya 一键安装脚本 (Windows PowerShell 5.1+ / 7)。
 # 从 GitHub Releases 拉取最新版, 装到 %LOCALAPPDATA%\Programs\Kuraya,
 # 并把该目录加入用户 PATH, 之后任意终端输入 kuraya 即可。
 # 用法:
-#   irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 | iex
+#   irm https://kuraya.app/install.ps1 | iex
 $ErrorActionPreference = 'Stop'
 
 # 界面语言：跟随系统（简体中文 / 繁體中文 / English）

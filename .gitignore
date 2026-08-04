@@ -15,6 +15,7 @@ dist/
 *.egg-info/
 *.egg
 .eggs/
+kuraya/web/favicon.icns
 
 # ---------- Python ----------
 __pycache__/

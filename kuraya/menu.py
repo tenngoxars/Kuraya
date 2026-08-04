@@ -13,8 +13,6 @@ import sys
 from . import launcher, picker, settings
 from .launcher import C, W, brand, dw, rule, say
 
-VIDEO_EXTS = ('.mp4', '.avi', '.mkv', '.wmv', '.ts', '.mov', '.m4v', '.rmvb', '.iso', '.mpg')
-
 
 def clear_screen():
     """清屏。终端不支持时退回打印空行，不让报错干扰界面"""
@@ -34,7 +32,7 @@ def count_pending(source):
     if not source or not os.path.isdir(source):
         return 0
     return sum(1 for _, _, files in os.walk(source)
-               for f in files if os.path.splitext(f)[1].lower() in VIDEO_EXTS)
+               for f in files if os.path.splitext(f)[1].lower() in settings.VIDEO_EXTS)
 
 
 def count_library(library):
@@ -138,13 +136,36 @@ def edit_setting(label, key, kind='folder'):
     launcher.spin.hide()
 
     if err:
+        # 无桌面/无 tkinter 的环境改为手动输入，不把设置堵死
         say(f'    {C.RED}✕ 无法打开选择窗口：{err}{C.RESET}')
-        return
-    if not path:
+        path = ask_path(label, kind)
+        if not path:
+            say(f'    {C.GREY}已取消{C.RESET}')
+            return
+    elif not path:
         say(f'    {C.GREY}已取消{C.RESET}')
         return
     settings.save(**{key: path})
     say(f'    {C.GREEN}✓{C.RESET} 已保存：{path}')
+
+
+def ask_path(label, kind='folder'):
+    """选择框用不了时改为终端输入（与首次引导的手动输入同款）"""
+    say(f'    {C.GREY}改为手动输入，路径支持 ~ 展开{C.RESET}')
+    try:
+        raw = input(f'  {label}路径（回车取消） {C.GOLD}›{C.RESET} ').strip().strip('"\'')
+    except (EOFError, KeyboardInterrupt):
+        return ''
+    if not raw:
+        return ''
+    path = os.path.expanduser(raw)
+    if kind == 'folder' and not os.path.isdir(path):
+        say(f'    {C.RED}✕{C.RESET} 目录不存在：{path}')
+        return ''
+    if kind == 'file' and not os.path.isfile(path):
+        say(f'    {C.RED}✕{C.RESET} 文件不存在：{path}（留空可使用系统默认播放器）')
+        return ''
+    return path
 
 
 def settings_menu():

@@ -76,6 +76,9 @@ else:
 # 每部影片之间的间隔，避免把数据源当接口刷
 DEFAULT_SLEEP = 3.0
 
+# 视频扩展名，cleanup/gallery/menu 共用，新增格式只需改这一处
+VIDEO_EXTS = ('.mp4', '.avi', '.mkv', '.wmv', '.ts', '.mov', '.m4v', '.rmvb', '.iso', '.mpg')
+
 
 def _read():
     cfg = configparser.ConfigParser()

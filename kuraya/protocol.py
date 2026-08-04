@@ -8,10 +8,16 @@
 注册写入 HKEY_CURRENT_USER，不需要管理员权限。
 """
 import os
+import shutil
+import subprocess
 import sys
+from pathlib import Path
 from urllib.parse import unquote
 
 SCHEME = 'kuraya'
+
+_LSREGISTER = ('/System/Library/Frameworks/CoreServices.framework/Frameworks/'
+               'LaunchServices.framework/Support/lsregister')
 
 
 def handler_command():
@@ -61,11 +67,69 @@ def ensure_registered():
     return ok
 
 
+def ensure_shell_app():
+    """
+    打包版在 macOS 上的点击封面播放：把随包分发的 Kuraya.app
+    （osacompile 生成的协议壳，见 packaging/scheme_handler.applescript）
+    装到 ~/Applications 并注册。放 main() 里自愈，安装方式无关——
+    brew 的 sandbox 写不了用户目录，由程序自身来完成。
+    失败静默，不影响主流程。
+    """
+    if sys.platform != 'darwin' or not getattr(sys, 'frozen', False):
+        return False
+    target = Path.home() / 'Applications' / 'Kuraya.app'
+    if target.is_dir():
+        return True
+    # 随包位置：zip/brew/脚本安装的壳 app 都在 exe 父级（如 ~/.local/opt/Kuraya.app、
+    # libexec/Kuraya.app），exe 同级只兜底手动布局
+    here = Path(sys.executable).resolve().parent
+    sources = (here / 'Kuraya.app', here.parent / 'Kuraya.app')
+    src = next((p for p in sources if p.is_dir()), None)
+    if src is None:
+        return False
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(src, target)
+        subprocess.run([_LSREGISTER, '-f', str(target)],
+                       capture_output=True, timeout=10)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def play_mode():
+    """当前平台能否用 kuraya: 协议点封面播放，返回 'protocol' 或 'copy'。
+    页面据此决定链接形态：协议不可用时降级为复制路径，不留点了没反应的封面。
+    """
+    if os.name == 'nt':
+        # Windows 自动注册，被安全软件拦截未注册时降级
+        return 'protocol' if is_registered() else 'copy'
+    if sys.platform == 'darwin':
+        # mac 依赖首次运行自装的壳 app（~/Applications/Kuraya.app）
+        home = Path.home()
+        apps = (home / 'Applications', Path('/Applications'))
+        return 'protocol' if any((base / 'Kuraya.app').is_dir()
+                                 for base in apps) else 'copy'
+    # Linux: 看 xdg 是否已注册 kuraya: 协议处理器（安装脚本负责注册）
+    try:
+        out = subprocess.run(
+            ['xdg-mime', 'query', 'default', 'x-scheme-handler/kuraya'],
+            capture_output=True, text=True, timeout=5)
+        return 'protocol' if out.stdout.strip() else 'copy'
+    except (OSError, subprocess.SubprocessError):
+        return 'copy'
+
+
 def parse_url(raw):
     """从 kuraya:xxx 中还原出文件路径"""
     text = raw.strip().strip('"')
     if text.lower().startswith(SCHEME + ':'):
         text = text[len(SCHEME) + 1:]
-    # 浏览器可能把路径当作 //host/path 处理，去掉多余的前导斜杠
-    text = text.lstrip('/')
-    return os.path.normpath(unquote(text))
+    text = unquote(text)
+    # 浏览器可能把路径当作 //host/path 处理，需要去掉多余的前导斜杠。
+    # 但只能处理相对路径——POSIX 绝对路径的根斜杠一旦被去掉就再找不回来了
+    if not os.path.isabs(text):
+        text = text.lstrip('/')
+    return os.path.normpath(text)

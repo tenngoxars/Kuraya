@@ -18,7 +18,7 @@ from PIL import Image
 from kuraya import media
 from kuraya.media.http import Unavailable
 from kuraya.media.model import (CoverReady, FailReason, Failed, Fetched, Found,
-                                Movie, PosterReady, Settings, Started, Stored)
+                                Movie, Settings, Started, Stored)
 
 MOVIE = Movie(
     number='XXX-000',

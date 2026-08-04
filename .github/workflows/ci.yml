@@ -1,0 +1,19 @@
+# 单元测试流水线：每次 push / PR 跑全量测试，三平台发布前先过这一关。
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 安装依赖
+        run: python -m pip install -r requirements.txt
+      - name: 运行单元测试
+        run: python -m unittest discover tests

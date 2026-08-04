@@ -22,19 +22,23 @@
 
 ## 安装
 
-需要 Python 3.11 以上，三个平台通用：
+源码安装需要 Python 3.11 以上：
 
 ```
-git clone git@github.com:tenngoxars/Kuraya.git
-cd Kuraya
-pipx install .
+git clone git@github.com:tenngoxars/Kuraya.git && cd Kuraya
+pipx install .      # 没有 pipx 则 pip install .
 ```
 
-装完 `kuraya` 就在 PATH 里了。用 `pipx` 而非 `pip` 是因为它把依赖装进独立环境，
-不会和系统里其他包打架；没有 pipx 的话 `pip install .` 一样能用。
+免安装的二进制（一行）：
 
-Windows 上也可以不装 Python，自行执行 `build.bat` 构建出 `dist\Kuraya\`，
-双击其中的 `Kuraya.exe` 即可，首次运行会询问是否设置快捷启动。
+| 平台 | 安装方式 |
+|---|---|
+| macOS | `brew install tenngoxars/tap/kuraya` |
+| Windows | `irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 \| iex` |
+| Linux | `curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh \| bash` |
+
+一键脚本把程序装到 `~/.local/opt/kuraya` 并生成 `kuraya` 命令；若 `~/.local/bin`
+不在 PATH，脚本会给出提示，也可用 `KURAYA_UPDATE_RC=1` 让脚本自动写入 shell 配置。
 
 配置文件的位置随安装方式而定：
 
@@ -42,7 +46,7 @@ Windows 上也可以不装 Python，自行执行 `build.bat` 构建出 `dist\Kur
 |---|---|
 | 命令行安装（macOS / Linux） | `~/.config/kuraya/` |
 | 命令行安装（Windows） | `%APPDATA%\Kuraya\` |
-| Kuraya.exe | 可执行文件旁边 |
+| 二进制安装（brew / 一键脚本 / Kuraya.exe） | 可执行文件旁边（brew 升级会重置） |
 | 源码目录里直接跑 | 仓库根目录 |
 
 ## 快速开始
@@ -84,18 +88,14 @@ kuraya --quiet --yes       精简输出、不等待按键，供计划任务使�
 
 退出码：`0` 成功 · `1` 部分失败 · `2` 配置错误。
 
-完整参数见 `kuraya --help`。
-
 ## 配置
 
-菜单里的「设置」可改影片库位置、待整理目录与播放器。这几项与其余选项都存在
-`设置.ini`（位置见上文「安装」），也可直接编辑，格式见 [设置.example.ini](设置.example.ini)。
-
-只能在 `设置.ini` 里改的一项：
+菜单「设置」可改影片库、待整理目录与播放器；其余选项直接编辑 `设置.ini`
+（位置见上文「安装」，格式见 [设置.example.ini](设置.example.ini)）：
 
 | 小节 | 项 | 说明 |
 |---|---|---|
-| `[刮削]` | `间隔秒数` | 每部之间歇多久再处理下一部，默认 3。填 0 不等待，但请求过密可能被数据源限流 |
+| `[刮削]` | `间隔秒数` | 每部之间的请求间隔，默认 3。填 0 不等待，但可能被数据源限流 |
 
 ## 文件命名
 
@@ -125,21 +125,16 @@ kuraya --quiet --yes       精简输出、不等待按键，供计划任务使�
 
 ## 播放
 
-Windows 上点击片库页面中的封面即可用本机播放器打开。这依赖一个自定义协议，程序首次运行时会自动注册；若被安全软件拦截，可手动执行 `kuraya register` 重试。
+点封面即可用本机播放器打开：Windows 首次运行自动注册 `kuraya:` 协议（被安全软件
+拦截时执行 `kuraya register` 后重建页面重试）；macOS 首次运行自动把随包的壳 app
+（Kuraya.app）装入 `~/Applications` 并注册协议；Linux 由安装脚本注册协议处理器。
+协议不可用时点封面降级为复制路径，也可 `kuraya play <路径>` 播放。
 
-macOS 与 Linux 上没有这个协议，点封面改为复制完整路径；也可以直接：
-
-```
-kuraya play /path/to/影片.mp4
-```
-
-播放器可在「设置」中指定，留空则使用系统默认程序。
+播放器在「设置」中指定，留空用系统默认。
 
 ## 支持范围
 
-只处理**正规厂商发行的有码影片**，即「字母-数字」形态的固定番号作品，例如 `XXX-000`、`YYYY-1234`。
-
-数据来自 javbus，该站的收录范围与上述定义基本重合，因此不做多源聚合 —— 多一个数据源换不来实际覆盖，只会带来字段冲突与优先级问题。
+只处理**正规厂商发行的有码影片**（「字母-数字」固定番号，如 `XXX-000`），数据来自 javbus，单源不聚合。
 
 以下类型**不在支持范围内，也不计划支持**：
 
@@ -150,22 +145,18 @@ kuraya play /path/to/影片.mp4
 | 无码 | Carib、1Pondo、10musume |
 | 无固定番号 | 自制、合集、剪辑 |
 
-这类文件放进待整理目录不会报错，但查不到数据，会原样留在目录里，不做任何改动。
+这类文件放进待整理目录会原样留下，不做改动。
 
-**如果原本能刮的影片突然也刮不到了**，先跑 `kuraya selftest`：它用一组固定番号实跑一遍，
-能分清是数据源改版导致整体失灵，还是这几部影片本身不在收录范围内。
+刮不到先跑 `kuraya selftest`，能分清是站点改版还是番号本身不在收录范围。
 
-功能上同样不打算做的：在线播放、影片下载、字幕匹配、元数据翻译。本工具只负责把已有的本地文件整理成有序片库。
+同样不做：在线播放、影片下载、字幕匹配、元数据翻译。
 
 ## 已知限制
 
-- **演员名为繁体中文**，数据源如此，与日文原名体系可能不一致。不做繁简转换与翻译，此项为永久限制
-- **网站改版会导致刮削失效**，届时需更新 `kuraya/media/javbus.py` 顶部的解析规则；单一数据源意味着此时无法降级使用
-- `-UC` / `-C` 等特殊版本刮到的是原版元数据，数据源通常没有对应条目
-- **点封面播放只有 Windows 有**。它靠注册 `kuraya:` 自定义协议实现，而注册协议要写注册表；
-  macOS 注册 URL scheme 必须打成 `.app`，命令行安装的形态没有这一层。
-  macOS 与 Linux 上生成的页面会自动降级：点封面复制完整路径，另可用 `kuraya play <路径>` 从终端播放。
-  刮削、归档、编目三件事三个平台完全一致
+- **演员名为繁体中文**，不做繁简转换（永久限制）
+- **站点改版会导致刮削失效**，届时更新 `kuraya/media/javbus.py` 顶部的解析规则
+- `-UC` / `-C` 等版本刮到的是原版元数据，数据源通常没有对应条目
+- **点封面播放依赖协议注册**：Windows 自动注册；macOS 需壳 app、Linux 需协议处理器（安装命令自动完成），缺失时降级为复制路径，可用 `kuraya play` 播放
 
 ## 从源码运行
 
@@ -182,10 +173,13 @@ python -m unittest discover tests
 
 自行打包：
 
-```
-build.bat        构建，产物在 dist\Kuraya
-release.bat      构建并打包成发布用压缩包，附带 SHA256
-```
+| 平台 | 命令 | 产物 |
+|---|---|---|
+| Windows | `build.bat` / `release.bat` | `dist\Kuraya\` / 发布 zip |
+| macOS / Linux | `./build.sh` / `./release.sh` | `dist/Kuraya/` / 发布 zip |
+
+发布走 GitHub tag（`v*`）：流水线自动构建四个平台包、建 Release 并同步更新
+homebrew tap 公式（含 Intel 与 ARM 两个架构的哈希）。
 
 打包使用 PyInstaller 的 onedir 模式。部分杀毒软件对 PyInstaller 产物存在误报，这是该工具的普遍现象，可加入白名单。
 

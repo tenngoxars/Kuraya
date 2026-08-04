@@ -1,0 +1,161 @@
+# 发布流水线：打 tag 即发布。
+#
+# 用法：
+#   1. 改 kuraya/__init__.py 的 __version__（同步 packaging/version_info.txt）并提交推送
+#   2. git tag v0.2.0 && git push origin v0.2.0
+#
+# 流水线自动完成：
+#   校验 tag 与版本一致（四个构建 job 都会跑 check_tag.py）
+#   → 构建 mac-arm64 / mac-x86_64 / linux-x86_64 / win-x64 四个 zip
+#   → 建 GitHub Release 附 zip，说明里给出各 zip 的 SHA256
+#   → 若仓库配置了 TAP_TOKEN secret，自动更新 tap 仓库的 formula（两个架构块
+#     的 url/sha256 都会填）；没配则手动改 packaging/homebrew/kuraya.rb 后推送。
+#     注意：mac-x86_64 产物缺失时 update-tap 会失败（不会静默发旧哈希），
+#     此时需人工处理 tap 的 on_intel 块
+#
+# 注：macos-13 是 Intel runner；若 GitHub 下线该镜像，删掉对应 job 即可。
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------- 三平台构建 ----------
+  build-mac-arm64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 校验 tag 与版本号一致
+        run: python packaging/check_tag.py "$GITHUB_REF_NAME"
+      - name: 构建并打包
+        run: ./release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-arm64
+          path: dist/Kuraya-*-mac-arm64.zip
+
+  build-mac-x86_64:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 校验 tag 与版本号一致
+        run: python packaging/check_tag.py "$GITHUB_REF_NAME"
+      - name: 构建并打包
+        run: ./release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-x86_64
+          path: dist/Kuraya-*-mac-x86_64.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 校验 tag 与版本号一致
+        run: python packaging/check_tag.py "$GITHUB_REF_NAME"
+      - name: 构建并打包
+        run: ./release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: dist/Kuraya-*-linux-x86_64.zip
+
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 校验 tag 与版本号一致
+        shell: pwsh
+        run: python packaging/check_tag.py $env:GITHUB_REF_NAME
+      # 构建与打包复用 release.bat（含 zip 命名与 SHA256），与本地发布完全一致
+      - name: 构建并打包
+        run: cmd /c "release.bat nopause"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-x64
+          path: dist/Kuraya-*-win-x64.zip
+
+  # ---------- 建 Release ----------
+  release:
+    needs: [build-mac-arm64, build-mac-x86_64, build-linux, build-win]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+      - name: 生成发布说明
+        run: |
+          echo "## 安装" > NOTES.md
+          echo '```bash' >> NOTES.md
+          echo "brew install tenngoxars/tap/kuraya" >> NOTES.md
+          echo '```' >> NOTES.md
+          echo "" >> NOTES.md
+          echo "## 各平台包 SHA256（更新 tap formula 时用）" >> NOTES.md
+          echo '```' >> NOTES.md
+          for f in release-assets/*/*.zip; do
+            echo "$(shasum -a 256 "$f" | cut -d' ' -f1)  $(basename "$f")"
+          done >> NOTES.md
+          echo '```' >> NOTES.md
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" release-assets/*/*.zip \
+            --title "Kuraya $VER" --notes-file NOTES.md
+
+  # ---------- 可选：自动更新 tap 公式 ----------
+  # 配了 TAP_TOKEN（能推 homebrew-tap 仓库的 PAT）时自动更新 formula；
+  # 没配则手动：按 Release 说明里的 SHA256 改 packaging/homebrew/kuraya.rb 后推送。
+  # 两个架构块都会填；任一产物缺失时 download-artifact 直接失败，不会静默发旧哈希。
+  update-tap:
+    needs: release
+    if: ${{ secrets.TAP_TOKEN != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: tenngoxars/homebrew-tap
+          token: ${{ secrets.TAP_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: mac-arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: mac-x86_64
+      - name: 更新 formula 并推送
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          VER="${VERSION#v}"
+          ARM_URL="https://github.com/tenngoxars/Kuraya/releases/download/${VERSION}/Kuraya-${VER}-mac-arm64.zip"
+          INTEL_URL="https://github.com/tenngoxars/Kuraya/releases/download/${VERSION}/Kuraya-${VER}-mac-x86_64.zip"
+          ARM_SHA=$(shasum -a 256 mac-arm64/*.zip | cut -d' ' -f1)
+          INTEL_SHA=$(shasum -a 256 mac-x86_64/*.zip | cut -d' ' -f1)
+          # version 顶层唯一；url/sha256 按架构块分别替换（url 整行替换，含内嵌版本号）
+          sed -i "s|version \".*\"|version \"$VER\"|" Formula/kuraya.rb
+          sed -i "/on_arm do/,/^  end/ s|url \".*\"|url \"$ARM_URL\"|; s|sha256 \".*\"|sha256 \"$ARM_SHA\"|" Formula/kuraya.rb
+          sed -i "/on_intel do/,/^  end/ s|url \".*\"|url \"$INTEL_URL\"|; s|sha256 \".*\"|sha256 \"$INTEL_SHA\"|" Formula/kuraya.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/kuraya.rb
+          git commit -m "kuraya $VER"
+          git push

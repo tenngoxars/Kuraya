@@ -20,14 +20,12 @@ if not os.path.isdir(BASE):
 
 # 非演员目录，扫描时跳过
 SKIP = {"待整理", "Kuraya", "kuraya"}
-VIDEO_EXTS = (".mp4", ".avi", ".mkv", ".wmv", ".ts", ".mov", ".m4v", ".rmvb")
 
 def rel_url(*parts):
     return "/".join(quote(p) for p in parts)
 
 def abs_path(*parts):
-    # 播放用的绝对路径。Windows 上交给 kuraya: 协议，
-    # 其他平台页面里只能展示出来供复制，格式按本机来
+    # 播放用的绝对路径，交给 kuraya: 协议或供页面复制，格式按本机来
     path = os.path.join(BASE, *parts)
     return path.replace("/", "\\") if os.name == "nt" else path
 
@@ -114,10 +112,11 @@ items.sort(key=lambda x: (x["date"] or "0000-00-00"), reverse=True)
 
 # 界面模板与数据分离：模板随包走，数据在此注入，输出为单文件页面
 try:
-    from kuraya.settings import WEB_DIR
+    from kuraya.settings import VIDEO_EXTS, WEB_DIR
 except ImportError:
-    # 直接以脚本方式运行时包不在搜索路径上，按本文件位置推算
+    # 直接以脚本方式运行时包不在搜索路径，按本文件位置推算
     WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
+    VIDEO_EXTS = ('.mp4', '.avi', '.mkv', '.wmv', '.ts', '.mov', '.m4v', '.rmvb', '.iso', '.mpg')
 
 
 def read_web(name):
@@ -125,9 +124,14 @@ def read_web(name):
         return fp.read()
 
 
-# 点封面播放靠 kuraya: 协议，而注册协议要写注册表，只有 Windows 有。
-# 其他平台生成的页面改为复制路径，不能留一个点了没反应的封面
-play_mode = "protocol" if os.name == "nt" else "copy"
+# 点封面播放靠 kuraya: 协议，平台是否可用由 protocol.play_mode 判断；
+# 不可用时页面降级为复制路径，不留点了没反应的封面
+try:
+    from kuraya.protocol import play_mode as _resolve_play_mode
+    play_mode = _resolve_play_mode()
+except ImportError:
+    # 裸脚本运行（python gallery.py <目录>）时包不在搜索路径，降级复制
+    play_mode = 'copy'
 
 html = read_web("index.html")
 html = html.replace("{{STYLE}}", read_web("style.css").rstrip("\n"))

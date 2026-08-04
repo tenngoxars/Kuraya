@@ -222,6 +222,9 @@ def main():
     # 后者的 URL 可能含被 argparse 误认为选项的字符
     if argv and argv[0] in INTERNAL:
         return run_internal(INTERNAL[argv[0]], argv[1:])
+
+    protocol.ensure_shell_app()
+
     if argv and argv[0] == '--play':
         return do_play(argv[1] if len(argv) > 1 else '')
 

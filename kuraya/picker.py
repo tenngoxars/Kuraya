@@ -2,8 +2,9 @@
 """
 调用系统原生的文件/目录选择框。
 
-Windows 走 PowerShell 的 Windows.Forms 对话框，不依赖 tkinter——
-精简版 Python（绿色版打包用）不含 tkinter，用它会在打包后失效。
+Windows 走 PowerShell 的 Windows.Forms 对话框，避免打包带上 tkinter
+（体积大，见 kuraya.spec 的 excludes）；mac/Linux 走 tkinter，
+打包版与源码版都需要它，构建环境必须带 tkinter。
 
 直接运行本文件可做诊断： python -m kuraya.picker
 """

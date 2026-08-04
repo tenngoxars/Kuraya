@@ -33,9 +33,11 @@ pipx install .      # 没有 pipx 则 pip install .
 
 | 平台 | 安装方式 |
 |---|---|
-| macOS | `brew install tenngoxars/tap/kuraya` |
+| macOS（Apple Silicon） | `brew install tenngoxars/tap/kuraya` |
 | Windows | `irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 \| iex` |
 | Linux | `curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh \| bash` |
+
+macOS 仅提供 Apple Silicon（M1 及以上）包——GitHub 已退役 Intel macOS 构建机。
 
 一键脚本把程序装到 `~/.local/opt/kuraya` 并生成 `kuraya` 命令；若 `~/.local/bin`
 不在 PATH，脚本会给出提示，也可用 `KURAYA_UPDATE_RC=1` 让脚本自动写入 shell 配置。
@@ -178,8 +180,8 @@ python -m unittest discover tests
 | Windows | `build.bat` / `release.bat` | `dist\Kuraya\` / 发布 zip |
 | macOS / Linux | `./build.sh` / `./release.sh` | `dist/Kuraya/` / 发布 zip |
 
-发布走 GitHub tag（`v*`）：流水线自动构建四个平台包、建 Release 并同步更新
-homebrew tap 公式（含 Intel 与 ARM 两个架构的哈希）。
+发布走 GitHub tag（`v*`）：流水线自动构建三平台包（mac 仅 Apple Silicon）、建 Release
+并同步更新 homebrew tap 公式。
 
 打包使用 PyInstaller 的 onedir 模式。部分杀毒软件对 PyInstaller 产物存在误报，这是该工具的普遍现象，可加入白名单。
 

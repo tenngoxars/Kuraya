@@ -16,40 +16,31 @@
 
 1. 从文件名识别番号，联网获取元数据与封面
 2. 按 `演员名/番号` 归档，生成 nfo 与海报
-3. 重建片库页面 —— 一个可以直接双击打开的 HTML，带搜索、筛选、点封面播放
+3. 打开片库页面：可搜索、筛选、点击封面播放
 
-不提供任何影片下载途径，只处理你已有的本地文件。
+**KURAYA 不提供任何影片下载途径，只处理你已有的本地文件**。
 
 ## 安装
 
-源码安装需要 Python 3.11 以上：
+命令行安装：
+
+**macOS**（仅 Apple Silicon）：
 
 ```
-git clone git@github.com:tenngoxars/Kuraya.git && cd Kuraya
-pipx install .      # 没有 pipx 则 pip install .
+brew install tenngoxars/tap/kuraya
 ```
 
-免安装的二进制（一行）：
+**Windows**：
 
-| 平台 | 安装方式 |
-|---|---|
-| macOS（Apple Silicon） | `brew install tenngoxars/tap/kuraya` |
-| Windows | `irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 \| iex` |
-| Linux | `curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh \| bash` |
+```
+irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 | iex
+```
 
-macOS 仅提供 Apple Silicon（M1 及以上）包——GitHub 已退役 Intel macOS 构建机。
+**Linux**：
 
-一键脚本把程序装到 `~/.local/opt/kuraya` 并生成 `kuraya` 命令；若 `~/.local/bin`
-不在 PATH，脚本会给出提示，也可用 `KURAYA_UPDATE_RC=1` 让脚本自动写入 shell 配置。
-
-配置文件的位置随安装方式而定：
-
-| 安装方式 | `设置.ini` 位置 |
-|---|---|
-| 命令行安装（macOS / Linux） | `~/.config/kuraya/` |
-| 命令行安装（Windows） | `%APPDATA%\Kuraya\` |
-| 二进制安装（brew / 一键脚本 / Kuraya.exe） | 可执行文件旁边（brew 升级会重置） |
-| 源码目录里直接跑 | 仓库根目录 |
+```
+curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh | bash
+```
 
 ## 快速开始
 
@@ -88,55 +79,9 @@ kuraya --dry-run           只显示将要处理的内容，不改动文件
 kuraya --quiet --yes       精简输出、不等待按键，供计划任务使用
 ```
 
-退出码：`0` 成功 · `1` 部分失败 · `2` 配置错误。
-
-## 配置
-
-菜单「设置」可改影片库、待整理目录与播放器；其余选项直接编辑 `设置.ini`
-（位置见上文「安装」，格式见 [设置.example.ini](设置.example.ini)）：
-
-| 小节 | 项 | 说明 |
-|---|---|---|
-| `[刮削]` | `间隔秒数` | 每部之间的请求间隔，默认 3。填 0 不等待，但可能被数据源限流 |
-
-## 文件命名
-
-程序从文件名中提取番号，站点前缀、方括号段与画质编码标记会被忽略，
-以下后缀识别为版本标记后按原版番号查询：
-
-| 后缀 | 含义 |
-|---|---|
-| `-C` `ch` | 中文字幕 |
-| `-UC` `-U` | 无码流出 |
-| `-4K` | 高清版本 |
-| `-CD1` `-CD2` | 多集分卷 |
-
-例如 `example.com@XXX-000-C.mp4` 会被识别为 `XXX-000`，归档后：
-
-```
-影片库/<演员名>/XXX-000/
-  XXX-000-C.mp4        影片本体，保留版本标记
-  XXX-000-C.nfo        元数据，与影片本体成对
-  XXX-000-C-poster.jpg 竖版海报
-  XXX-000-C-fanart.jpg 横版封面
-  XXX-000-C-thumb.jpg
-  XXX-000-C.srt        原目录有同名字幕则一并搬入
-```
-
-`-4K` 不进文件名，只作为 nfo 里的一个标签。多集分卷各自带 `-CD1` `-CD2`，共用同一套图片。
-
-## 播放
-
-点封面即可用本机播放器打开：Windows 首次运行自动注册 `kuraya:` 协议（被安全软件
-拦截时执行 `kuraya register` 后重建页面重试）；macOS 首次运行自动把随包的壳 app
-（Kuraya.app）装入 `~/Applications` 并注册协议；Linux 由安装脚本注册协议处理器。
-协议不可用时点封面降级为复制路径，也可 `kuraya play <路径>` 播放。
-
-播放器在「设置」中指定，留空用系统默认。
-
 ## 支持范围
 
-只处理**正规厂商发行的有码影片**（「字母-数字」固定番号，如 `XXX-000`），数据来自 javbus，单源不聚合。
+只处理**正规厂商发行的影片**（「字母-数字」固定番号，如 `XXX-000`），数据来自 javbus，单源不聚合。
 
 以下类型**不在支持范围内，也不计划支持**：
 
@@ -153,14 +98,16 @@ kuraya --quiet --yes       精简输出、不等待按键，供计划任务使�
 
 同样不做：在线播放、影片下载、字幕匹配、元数据翻译。
 
-## 已知限制
-
-- **演员名为繁体中文**，不做繁简转换（永久限制）
-- **站点改版会导致刮削失效**，届时更新 `kuraya/media/javbus.py` 顶部的解析规则
-- `-UC` / `-C` 等版本刮到的是原版元数据，数据源通常没有对应条目
-- **点封面播放依赖协议注册**：Windows 自动注册；macOS 需壳 app、Linux 需协议处理器（安装命令自动完成），缺失时降级为复制路径，可用 `kuraya play` 播放
-
 ## 从源码运行
+
+想从源码安装（需要 Python 3.11 以上）：
+
+```
+git clone git@github.com:tenngoxars/Kuraya.git && cd Kuraya
+pipx install .
+```
+
+直接跑源码：
 
 ```
 pip install -r requirements.txt

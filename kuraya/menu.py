@@ -259,13 +259,16 @@ def settings_menu():
             return
         if choice == '1':
             edit_setting(tr('选择影片库目录'), 'library')
+            pause()
         elif choice == '2':
             edit_setting(tr('选择待整理目录'), 'source')
+            pause()
         elif choice == '3':
             edit_setting(tr('选择播放器程序'), 'player', kind='file')
+            pause()
         elif choice == '4':
             language_menu()
-        pause()
+            # 语言菜单内按 Esc 返回即完成，不再追加「按回车返回菜单」
 
 
 def run():

@@ -70,6 +70,45 @@ class ConfigLocation(unittest.TestCase):
         self.assertTrue(target.is_file())
 
 
+class MigrateLegacyConfig(unittest.TestCase):
+    """旧版打包把配置放可执行文件旁（升级即丢），新版本发现后搬进用户目录"""
+
+    def test_moves_legacy_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / 'app' / '设置.ini'
+            legacy.parent.mkdir()
+            legacy.write_text('[路径]\n影片库目录 = /Users/x/Movies\n',
+                              encoding='utf-8')
+            target = root / 'config' / '设置.ini'
+            with mock.patch.object(settings, 'FROZEN', True), \
+                    mock.patch.object(settings.sys, 'executable',
+                                      str(root / 'app' / 'Kuraya')), \
+                    mock.patch.object(settings, 'SETTINGS_FILE', target):
+                settings._migrate_legacy_config()
+            self.assertTrue(target.is_file())
+            self.assertFalse(legacy.exists())
+            self.assertIn('Movies', target.read_text(encoding='utf-8'))
+
+    def test_keeps_legacy_when_user_config_exists(self):
+        """用户目录已有配置时不动旧文件，避免覆盖新设置"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / 'app' / '设置.ini'
+            legacy.parent.mkdir()
+            legacy.write_text('旧配置', encoding='utf-8')
+            target = root / 'config' / '设置.ini'
+            target.parent.mkdir()
+            target.write_text('新配置', encoding='utf-8')
+            with mock.patch.object(settings, 'FROZEN', True), \
+                    mock.patch.object(settings.sys, 'executable',
+                                      str(root / 'app' / 'Kuraya')), \
+                    mock.patch.object(settings, 'SETTINGS_FILE', target):
+                settings._migrate_legacy_config()
+            self.assertTrue(legacy.exists())
+            self.assertEqual(target.read_text(encoding='utf-8'), '新配置')
+
+
 class Sleep(unittest.TestCase):
     """只能在设置.ini 里改的一项，界面上没有入口"""
 

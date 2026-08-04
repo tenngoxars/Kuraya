@@ -34,17 +34,30 @@ def user_config_dir(name, environ, home):
 
 def _config_dir():
     """
-    配置文件放哪儿，三种情形：
+    配置文件放哪儿：
 
-      冻结的 EXE   放可执行文件旁边，用户能直接看见和编辑
       源码检出     放仓库根，开发时改起来方便
-      装成命令行   放系统的用户配置目录，site-packages 不该被写入
+      其他（打包/命令行安装） 放系统的用户配置目录。打包版绝不能放
+                     可执行文件旁——brew 升级会整个替换程序目录，
+                     配置会被覆盖，用户每次升级都得重新设置
     """
-    if FROZEN:
-        return Path(sys.executable).resolve().parent
     if _CHECKOUT:
         return _CHECKOUT
     return Path(user_config_dir(os.name, os.environ, os.path.expanduser('~')))
+
+
+def _migrate_legacy_config():
+    """
+    旧版打包把配置放在可执行文件旁（升级即丢）。新位置发现旧文件时
+    搬过去，让老用户升上来不用重设。放在模块底部调用，避免循环引用。
+    """
+    legacy = Path(sys.executable).resolve().parent / '设置.ini'
+    if FROZEN and legacy.is_file() and not SETTINGS_FILE.exists():
+        try:
+            SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            legacy.rename(SETTINGS_FILE)
+        except OSError:
+            pass
 
 
 APP_DIR = _config_dir()
@@ -180,3 +193,7 @@ def ensure_dirs(library, source, create_library=False):
     src = Path(source).expanduser() if source else lib / '待整理'
     src.mkdir(parents=True, exist_ok=True)
     return lib.resolve(), src.resolve()
+
+
+# 旧版打包的配置在程序旁，升级即丢；发现后搬到用户目录（见 _migrate_legacy_config）
+_migrate_legacy_config()

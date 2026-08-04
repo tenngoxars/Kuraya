@@ -19,7 +19,8 @@ name: release
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -126,22 +127,31 @@ jobs:
   # 配了 TAP_TOKEN（能推 homebrew-tap 仓库的 PAT）时自动更新 formula；
   # 没配则手动：按 Release 说明里的 SHA256 改 packaging/homebrew/kuraya.rb 后推送。
   # 两个架构块都会填；任一产物缺失时 download-artifact 直接失败，不会静默发旧哈希。
+  # 注：job 级 if 不能读 secrets（会直接报错），改经 job env 传值、step 级判断
   update-tap:
     needs: release
-    if: ${{ secrets.TAP_TOKEN != '' }}
     runs-on: ubuntu-latest
+    env:
+      TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - name: 未配置 TAP_TOKEN 时跳过
+        if: env.TAP_TOKEN == ''
+        run: echo "未配置 TAP_TOKEN，跳过 tap 更新（手动更新 packaging/homebrew/kuraya.rb）"
+      - if: env.TAP_TOKEN != ''
+        uses: actions/checkout@v4
         with:
           repository: tenngoxars/homebrew-tap
           token: ${{ secrets.TAP_TOKEN }}
-      - uses: actions/download-artifact@v4
+      - if: env.TAP_TOKEN != ''
+        uses: actions/download-artifact@v4
         with:
           name: mac-arm64
-      - uses: actions/download-artifact@v4
+      - if: env.TAP_TOKEN != ''
+        uses: actions/download-artifact@v4
         with:
           name: mac-x86_64
       - name: 更新 formula 并推送
+        if: env.TAP_TOKEN != ''
         env:
           VERSION: ${{ github.ref_name }}
         run: |

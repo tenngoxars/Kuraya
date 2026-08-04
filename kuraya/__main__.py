@@ -94,13 +94,10 @@ def do_register(quiet=False):
 
 
 def do_install(remove=False):
-    """把程序目录登记到用户 PATH，或从中移除"""
+    """把程序目录登记到用户 PATH，或卸载（移除命令入口与程序文件）"""
     from . import pathenv
     if remove:
-        ok, why = pathenv.uninstall()
-        print(tr("  已取消。以后需要打开程序，请到程序所在文件夹双击。")
-              if ok else tr("  取消失败：{why}", why=why))
-        return OK if ok else 1
+        return do_uninstall()
 
     ok, why = pathenv.install()
     if ok:
@@ -110,6 +107,81 @@ def do_install(remove=False):
     else:
         print(tr("  设置失败：{why}", why=why))
     return OK if ok else 1
+
+
+def do_uninstall():
+    """卸载：移除 PATH 登记、命令行入口与程序文件"""
+    import shutil
+    from pathlib import Path
+
+    from . import pathenv, settings
+    from .launcher import C
+
+    exe = Path(sys.executable).resolve()
+    if sys.platform == 'darwin' and 'Cellar' in exe.parts and 'kuraya' in exe.parts:
+        print(f'  {C.RED}✕{C.RESET} {tr("当前是 Homebrew 安装，请运行")} '
+              f'{C.BOLD}brew uninstall kuraya{C.RESET}')
+        return 1
+    if not FROZEN:
+        print(f'  {C.RED}✕{C.RESET} {tr("源码或 pip 安装请直接删除对应目录")}')
+        return 1
+
+    try:
+        confirm_prompt = tr('将卸载 Kuraya（移除命令入口与程序文件），'
+                            '是否继续？[y/N]')
+        answer = input(f'  {confirm_prompt} {C.GOLD}›{C.RESET} '
+                       ).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        return 0
+    if answer not in ('y', 'yes'):
+        print(tr("  已取消"))
+        return 0
+
+    # 1. 移除 PATH 登记（Windows 注册表；POSIX 由 install.sh 写入 shell 配置）
+    if sys.platform == 'win32':
+        ok, why = pathenv.uninstall()
+        if not ok:
+            print(f'  {C.RED}✕{C.RESET} {tr("移除 PATH 失败：{why}", why=why)}')
+            return 1
+        print(f'  {C.GREEN}✓{C.RESET} {tr("已从 PATH 移除")}')
+    else:
+        path_hint = tr('PATH 条目在 shell 配置中（install.sh 写入），'
+                       '请手动从 ~/.zshrc 或 ~/.bashrc 移除 ~/.local/bin')
+        print(f'  {C.GREY}{path_hint}{C.RESET}')
+
+    # 2. 删除命令行入口（install.sh 创建的 shim）
+    shim = Path.home() / '.local' / 'bin' / 'kuraya'
+    if os.name != 'nt' and shim.is_file():
+        try:
+            shim.unlink()
+            print(f'  {C.GREEN}✓{C.RESET} {tr("已删除命令入口 {path}", path=shim)}')
+        except OSError as exc:
+            print(f'  {C.RED}✕{C.RESET} '
+                  f'{tr("删除命令入口失败：{exc}", exc=exc)}')
+
+    # 3. 删除程序目录与壳 app（Windows 上运行中的 exe 无法自删）
+    target = Path(sys.executable).parent
+    if sys.platform == 'win32':
+        manual_msg = tr('程序目录需手动删除（运行中的程序无法自删）：{path}',
+                        path=target)
+        print(f'  {C.GREY}{manual_msg}{C.RESET}')
+    else:
+        try:
+            shutil.rmtree(target)
+            print(f'  {C.GREEN}✓{C.RESET} '
+                  f'{tr("已删除程序目录 {path}", path=target)}')
+        except OSError as exc:
+            print(f'  {C.RED}✕{C.RESET} '
+                  f'{tr("删除程序目录失败：{exc}", exc=exc)}')
+        for app in (target.parent / 'Kuraya.app',
+                    Path.home() / 'Applications' / 'Kuraya.app'):
+            if app.exists():
+                shutil.rmtree(app, ignore_errors=True)
+
+    config_msg = tr('配置保留在 {path}，如需彻底清理请删除该目录',
+                    path=settings.APP_DIR)
+    print(f'  {C.GREY}{config_msg}{C.RESET}')
+    return 0
 
 
 def do_selftest():
@@ -206,7 +278,7 @@ def build_parser():
     sub.add_parser('update', parents=[common], help=tr("检查并安装新版本"))
     sub.add_parser('register', parents=[common], help=tr("重新注册 kuraya: 协议"))
     sub.add_parser('install', parents=[common], help=tr("设置为在任意窗口输入 kuraya 即可启动"))
-    sub.add_parser('uninstall', parents=[common], help=tr("取消上述设置"))
+    sub.add_parser('uninstall', parents=[common], help=tr('卸载 Kuraya（移除命令入口与程序文件）'))
 
     play = sub.add_parser('play', parents=[common], help=tr("播放指定文件"))
     play.add_argument('target', help=tr("影片路径"))

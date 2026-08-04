@@ -162,3 +162,28 @@ jobs:
           git add Formula/kuraya.rb
           git commit -m "kuraya $VER"
           git push
+  # ---------- 可选：通知官网仓库更新版本号 ----------
+  # 配了 SITE_DEPLOY_TOKEN（对 kuraya-site 仓库有写权限的 PAT）时，发版后向官网
+  # 仓库发 repository_dispatch，官网侧 sync-version workflow 收到即同步版本并触发重建。
+  # 没配则靠官网侧每 6 小时定时轮询兜底（kuraya-site/.github/workflows/sync-version.yml）。
+  notify-site:
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      SITE_DEPLOY_TOKEN: ${{ secrets.SITE_DEPLOY_TOKEN }}
+    steps:
+      - name: 未配置 SITE_DEPLOY_TOKEN 时跳过
+        if: env.SITE_DEPLOY_TOKEN == ''
+        run: echo "未配置 SITE_DEPLOY_TOKEN，跳过官网通知（靠官网定时轮询兜底）"
+      - if: env.SITE_DEPLOY_TOKEN != ''
+        name: 发送 repository_dispatch 通知官网
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $SITE_DEPLOY_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/tenngoxars/kuraya-site/dispatches \
+            -d "{\"event_type\":\"sync-version\",\"client_payload\":{\"version\":\"${VERSION#v}\"}}"
+

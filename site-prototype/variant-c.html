@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KURAYA 蔵屋 — 影片刮削与编目工具</title>
+<meta name="description" content="KURAYA 蔵屋：把散乱的影片文件整理成带封面和元数据的有序收藏，并生成可离线浏览的片库页面。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FAF6EF; --paper:#FFFFFF; --ink:#221B14; --muted:#75695B; --line:#E9E0D2;
+  --brand:#F0441D; --brand-deep:#C93310; --brand-soft:#FFE3D6;
+  --dark:#171310; --dark2:#100D0B; --dark-line:#2E2721; --dark-muted:#A99B8B;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:"Noto Sans SC",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  --grotesk:"Space Grotesk","Noto Sans SC",sans-serif;
+  --r:16px; --shadow:0 10px 30px rgba(34,27,20,.08);
+  --ease:cubic-bezier(.22,.7,.2,1);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+section{scroll-margin-top:76px}
+::selection{background:var(--brand);color:#fff}
+
+/* ---------- 导航 ---------- */
+nav{position:sticky;top:0;z-index:50;background:rgba(250,246,239,.86);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav-inner{display:flex;align-items:center;gap:30px;height:64px}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink);font-family:var(--grotesk);font-weight:700;font-size:17px;letter-spacing:.02em}
+.logo-mark{width:28px;height:28px;border-radius:8px;background:var(--brand);color:#fff;display:grid;place-items:center;font-size:13px;box-shadow:0 4px 12px rgba(240,68,29,.35)}
+.logo small{font-size:11px;color:var(--muted);font-weight:500;letter-spacing:.08em}
+.nav-links{display:flex;gap:24px;margin-left:auto;align-items:center}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:14.5px;font-weight:500;transition:color .2s}
+.nav-links a:hover{color:var(--ink)}
+.btn-mini{background:var(--ink);color:#F5EFE6;text-decoration:none;font-size:13.5px;font-weight:700;padding:9px 16px;border-radius:10px;transition:transform .25s var(--ease),background .25s}
+.btn-mini:hover{background:#000;transform:translateY(-1px)}
+@media(max-width:760px){.nav-links{display:none}}
+
+/* ---------- 通用 ---------- */
+.eyebrow{font-family:var(--grotesk);font-weight:700;font-size:12.5px;letter-spacing:.16em;color:var(--brand);text-transform:uppercase;display:flex;align-items:center;gap:10px}
+.eyebrow::before{content:"";width:22px;height:2.5px;border-radius:2px;background:var(--brand)}
+h2{font-family:var(--grotesk);font-size:clamp(26px,3.4vw,38px);font-weight:700;line-height:1.2;letter-spacing:-.01em;margin:12px 0 14px}
+.sub{color:var(--muted);font-size:15.5px;max-width:58ch}
+.sec{padding:96px 0}
+.sec-head{margin-bottom:44px}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:12px;padding:13px 24px;font-weight:700;font-size:15.5px;text-decoration:none;cursor:pointer;border:0;transition:transform .25s var(--ease),box-shadow .25s var(--ease),background .25s}
+.btn-primary{background:var(--brand);color:#fff;box-shadow:0 10px 24px rgba(240,68,29,.3)}
+.btn-primary:hover{background:var(--brand-deep);transform:translateY(-2px)}
+.btn-ghost{background:var(--paper);color:var(--ink);border:1.5px solid var(--ink)}
+.btn-ghost:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+
+/* ---------- Hero ---------- */
+.hero{position:relative;overflow:hidden;padding:92px 0 88px}
+.hero::before{content:"";position:absolute;top:-160px;right:-120px;width:560px;height:560px;border-radius:50%;background:radial-gradient(closest-side,rgba(240,68,29,.13),transparent 72%)}
+.hero-grid{display:grid;grid-template-columns:1.06fr .94fr;gap:60px;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--paper);padding:7px 15px;border-radius:999px;font-size:13px;color:var(--muted);font-weight:500}
+.badge b{color:var(--brand);font-family:var(--grotesk)}
+h1{font-family:var(--grotesk);font-weight:700;font-size:clamp(40px,5.8vw,66px);line-height:1.1;letter-spacing:-.02em;margin:24px 0 20px}
+.hl{color:var(--brand);position:relative;white-space:nowrap}
+.hl::after{content:"";position:absolute;left:0;right:0;bottom:.06em;height:.14em;background:var(--brand-soft);z-index:-1}
+.hero .sub{font-size:17.5px;line-height:1.75}
+.cta-row{display:flex;gap:14px;margin:32px 0 28px;flex-wrap:wrap}
+.trust{display:flex;gap:20px;flex-wrap:wrap;color:var(--muted);font-size:13.5px;font-weight:500}
+.trust span{display:flex;align-items:center;gap:7px}
+.trust span::before{content:"◈";color:var(--brand);font-size:11px}
+.hero-art{position:relative}
+.hero-glow{position:absolute;inset:-48px;background:radial-gradient(closest-side,rgba(240,68,29,.13),transparent 72%);z-index:0}
+.mock{position:relative;z-index:1;background:var(--paper);border:1px solid var(--line);border-radius:18px;box-shadow:0 26px 60px rgba(34,27,20,.14);transform:rotate(-1.4deg);transition:transform .5s var(--ease)}
+.hero-art:hover .mock{transform:rotate(0deg)}
+.mock-bar{display:flex;align-items:center;gap:6px;padding:11px 14px;border-bottom:1px solid var(--line)}
+.dot{width:10px;height:10px;border-radius:50%}
+.d-r{background:#F5654B}.d-y{background:#F2B13D}.d-g{background:#4CB782}
+.mock-url{flex:1;margin-left:10px;font-family:var(--mono);font-size:11.5px;color:var(--muted);background:var(--bg);border-radius:7px;padding:4px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mock-body{padding:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.cover{position:relative;border-radius:10px;aspect-ratio:2/3;display:flex;flex-direction:column;justify-content:space-between;padding:9px;overflow:hidden;transition:transform .3s var(--ease);cursor:pointer}
+.cover::after{content:"";position:absolute;inset:0;background:radial-gradient(130% 60% at 18% -4%,rgba(255,255,255,.4),transparent 55%)}
+.cover:hover{transform:translateY(-4px)}
+.cover-top{display:flex;justify-content:space-between;align-items:flex-start;z-index:1}
+.no{font-family:var(--grotesk);font-weight:700;font-size:13px;color:#fff;letter-spacing:.05em;text-shadow:0 1px 3px rgba(0,0,0,.35)}
+.qc{font-size:9.5px;font-weight:700;color:#fff;background:rgba(0,0,0,.28);border-radius:999px;padding:2px 7px;text-shadow:none}
+.actor{font-size:10.5px;font-weight:500;color:#fff;background:rgba(0,0,0,.32);border-radius:6px;padding:3px 7px;align-self:flex-start;z-index:1;text-shadow:0 1px 2px rgba(0,0,0,.3)}
+.c1{background:linear-gradient(150deg,#FF8A5C,#E03E1F)}.c2{background:linear-gradient(150deg,#66CFC3,#1F7A6F)}
+.c3{background:linear-gradient(150deg,#A585FF,#5B2FD0)}.c4{background:linear-gradient(150deg,#FFC96B,#DF7A0E)}
+.c5{background:linear-gradient(150deg,#74A9FF,#2F5FD0)}.c6{background:linear-gradient(150deg,#FF93BB,#C22F67)}
+.float-badge{position:absolute;z-index:2;background:var(--ink);color:#fff;border-radius:12px;padding:10px 15px;font-size:13px;font-weight:700;box-shadow:0 16px 34px rgba(23,19,16,.28)}
+.float-badge b{font-family:var(--grotesk)}
+.fb-1{top:-18px;right:-8px}
+.fb-2{bottom:-16px;left:-12px;background:var(--brand);transform:rotate(-2deg)}
+
+/* ---------- 整理前 / 整理后 ---------- */
+.cmp-grid{display:grid;grid-template-columns:1fr 72px 1fr;align-items:center;gap:6px}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.panel-head{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);font-size:13.5px;font-weight:700}
+.panel-head .cnt{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--muted);font-weight:400;white-space:nowrap}
+.p-head-before{color:#B23B1F}
+.p-head-after{color:#1F7A6F}
+.messy{list-style:none;padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.messy li{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12px;color:#4A4238;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.messy li i{flex:none;font-style:normal;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;letter-spacing:.05em}
+.fl-q{background:var(--brand-soft);color:var(--brand-deep)}
+.fl-d{background:#EFE9DF;color:#8A7F6E}
+.tree{font-family:var(--mono);font-size:12.5px;padding:18px 20px;line-height:1.95;overflow-x:auto;color:#4A4238}
+.tree .d{color:var(--brand-deep);font-weight:700}
+.tree .c{color:#A29583}
+.cmp-arrow{width:56px;height:56px;border-radius:50%;background:var(--brand);color:#fff;display:grid;place-items:center;font-size:24px;font-family:var(--grotesk);font-weight:700;box-shadow:0 12px 28px rgba(240,68,29,.35);justify-self:center;animation:float 3.2s ease-in-out infinite}
+.cmp-arrow .arr-v{display:none}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@media(max-width:860px){
+  .cmp-grid{grid-template-columns:1fr;gap:20px}
+  .cmp-arrow{width:46px;height:46px;font-size:19px}
+  .cmp-arrow .arr-h{display:none}
+  .cmp-arrow .arr-v{display:block}
+}
+
+/* ---------- 工作流程 ---------- */
+.step-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.step{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:28px 26px;transition:transform .3s var(--ease),box-shadow .3s var(--ease)}
+.step:hover{transform:translateY(-5px);box-shadow:var(--shadow)}
+.step .num{font-family:var(--grotesk);font-weight:700;font-size:14px;color:var(--brand);letter-spacing:.08em}
+.step h3{font-size:17.5px;margin:10px 0 8px}
+.step p{font-size:14px;color:var(--muted)}
+
+/* ---------- 片库预览 ---------- */
+.band{background:var(--paper);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.browser{border-radius:18px;border:1px solid var(--line);background:var(--bg);box-shadow:0 32px 70px rgba(34,27,20,.14);overflow:hidden}
+.browser-bar{display:flex;align-items:center;gap:8px;background:#fff;padding:11px 16px;border-bottom:1px solid var(--line)}
+.browser-tab{display:flex;align-items:center;gap:7px;background:var(--bg);border:1px solid var(--line);border-bottom:0;border-radius:9px 9px 0 0;padding:7px 15px;font-size:12px;font-weight:700;margin-bottom:-12px}
+.browser-tab::before{content:"◈";color:var(--brand);font-size:10px}
+.lib-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--line)}
+.search{flex:1;min-width:190px;display:flex;align-items:center;gap:9px;background:#fff;border:1.5px solid var(--line);border-radius:10px;padding:9px 13px;font-size:13px;color:#A29583}
+.search .glass{width:11px;height:11px;border:2px solid #A29583;border-radius:50%;position:relative;flex:none}
+.search .glass::after{content:"";position:absolute;width:2px;height:6px;background:#A29583;transform:rotate(-45deg);right:-3px;bottom:-4px;border-radius:2px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 13px;font-size:12.5px;color:var(--muted);cursor:pointer;font-weight:500}
+.chip.on{background:var(--brand);color:#fff;border-color:transparent;font-weight:700}
+.lib-grid{padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:12px}
+.lib-status{display:flex;align-items:center;gap:8px;padding:11px 16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+.lib-status::before{content:"✓";color:#2E9E6B;font-weight:700}
+.lib-cap{margin-top:16px;font-size:13px;color:var(--muted);text-align:center}
+
+/* ---------- 特性 ---------- */
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.feat{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:26px;transition:transform .3s var(--ease),box-shadow .3s var(--ease)}
+.feat:hover{transform:translateY(-5px);box-shadow:var(--shadow)}
+.ico{width:40px;height:40px;border-radius:11px;background:var(--brand-soft);color:var(--brand-deep);display:grid;place-items:center;font-family:var(--grotesk);font-weight:700;font-size:16px;margin-bottom:16px}
+.feat h3{font-size:16.5px;margin-bottom:7px}
+.feat p{font-size:13.5px;color:var(--muted)}
+
+/* ---------- 安装 ---------- */
+.install-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.inst{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:26px 24px;display:flex;flex-direction:column;gap:13px;transition:transform .3s var(--ease),box-shadow .3s var(--ease)}
+.inst:hover{transform:translateY(-5px);box-shadow:var(--shadow)}
+.os{display:flex;align-items:center;gap:10px;font-family:var(--grotesk);font-weight:700;font-size:17px}
+.os-dot{width:10px;height:10px;border-radius:50%;flex:none}
+.os-mac{background:#A8A29E}.os-win{background:#3E9BD6}.os-lin{background:#E8A33D}
+.inst p{font-size:13px;color:var(--muted);margin-top:-6px}
+.code{position:relative;background:var(--dark);color:#EDE4D8;border-radius:11px;font-family:var(--mono);font-size:12.5px;line-height:1.6;padding:14px 48px 14px 15px;word-break:break-all}
+.code .p{color:var(--brand);font-weight:700}
+.copy{position:absolute;top:8px;right:8px;background:rgba(255,255,255,.1);color:#CFC4B4;border:1px solid var(--dark-line);border-radius:7px;font-size:10.5px;padding:3px 9px;cursor:pointer;font-family:var(--sans)}
+.copy:hover{background:rgba(255,255,255,.18);color:#fff}
+.inst-source{grid-column:1/-1;display:flex;align-items:center;gap:22px;flex-wrap:wrap;background:var(--paper);border:1px dashed var(--line);border-radius:var(--r);padding:20px 24px}
+.inst-source .code{flex:1;min-width:260px}
+.src-note{font-size:13px;color:var(--muted);max-width:34ch}
+.src-note b{color:var(--ink)}
+
+/* ---------- 命令行（深色带） ---------- */
+.dark-band{background:var(--dark);color:#EDE4D8;border-bottom:4px solid var(--brand)}
+.dark-band .eyebrow{color:#FF8A66}
+.dark-band .eyebrow::before{background:#FF8A66}
+.dark-band h2{color:#F5EFE6}
+.dark-band .sub{color:var(--dark-muted)}
+.term{background:var(--dark2);border:1px solid var(--dark-line);border-radius:18px;overflow:hidden;box-shadow:0 30px 70px rgba(0,0,0,.4)}
+.term-bar{display:flex;align-items:center;gap:6px;padding:12px 16px;border-bottom:1px solid var(--dark-line)}
+.term-title{margin-left:10px;font-family:var(--mono);font-size:11.5px;color:#6E6256}
+.term-body{padding:22px 26px;font-family:var(--mono);font-size:13px;line-height:1.9;color:#CFC4B4;overflow-x:auto;white-space:pre}
+.t-p{color:#FF7A4D;font-weight:700}
+.t-ok{color:#7FCF9F}
+.t-d{color:#8E8272}
+.t-log{color:#fff;font-weight:700;letter-spacing:.09em}
+.t-mark{color:#FF7A4D}
+.cmd-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-top:20px}
+.cmd{display:flex;flex-direction:column;gap:3px;background:rgba(255,255,255,.045);border:1px solid var(--dark-line);border-radius:12px;padding:13px 16px;transition:background .25s,border-color .25s,transform .25s var(--ease)}
+.cmd:hover{background:rgba(255,255,255,.08);border-color:#4A4034;transform:translateY(-2px)}
+.cmd code{font-family:var(--mono);font-size:13px;color:#FFB59D}
+.cmd span{font-size:12.5px;color:var(--dark-muted)}
+
+/* ---------- 页脚 ---------- */
+footer{background:var(--dark2);color:#8E8272;padding:64px 0 40px}
+.foot-grid{display:grid;grid-template-columns:2.2fr 1fr 1fr;gap:44px;margin-bottom:40px}
+.foot-brand{font-family:var(--grotesk);font-weight:700;font-size:19px;color:#F5EFE6;margin-bottom:10px}
+.foot-brand .lm{color:var(--brand)}
+.foot p{font-size:13px;line-height:1.85}
+.foot h4{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#6E6256;margin-bottom:14px;font-family:var(--grotesk)}
+.foot a{display:block;color:#CFC4B4;text-decoration:none;font-size:13.5px;margin-bottom:9px;transition:color .2s}
+.foot a:hover{color:#fff}
+.disclaimer{border:1px solid #26211B;border-radius:12px;padding:14px 18px;font-size:12.5px;color:#8E8272;line-height:1.8;background:rgba(255,255,255,.02)}
+.disclaimer b{color:#CFC4B4}
+.foot-bottom{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;border-top:1px solid #26211B;margin-top:36px;padding-top:22px;font-size:12.5px;color:#6E6256}
+.foot-bottom b{font-family:var(--grotesk);color:#8E8272}
+
+/* ---------- 滚动动画 ---------- */
+.reveal{opacity:0;transform:translateY(20px);transition:opacity .65s var(--ease),transform .65s var(--ease);transition-delay:var(--d,0s)}
+.reveal.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}.cmp-arrow{animation:none}.cover,.step,.feat,.inst,.cmd,.mock,.float-badge{transition:none}}
+
+/* ---------- 响应式 ---------- */
+@media(max-width:980px){
+  .hero{padding:64px 0 72px}
+  .hero-grid{grid-template-columns:1fr;gap:52px}
+  .hero-art{max-width:520px;margin:0 auto;width:100%}
+  .step-grid,.features-grid,.install-grid{grid-template-columns:1fr 1fr}
+  .foot-grid{grid-template-columns:1fr 1fr}
+  .sec{padding:76px 0}
+}
+@media(max-width:760px){
+  .step-grid,.features-grid,.install-grid,.foot-grid{grid-template-columns:1fr}
+  .cta-row .btn{flex:1;justify-content:center}
+  .inst-source{padding:18px}
+  .term-body{padding:18px;font-size:12px}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= 导航 ================= -->
+<nav>
+  <div class="wrap nav-inner">
+    <a class="logo" href="#top"><span class="logo-mark">◈</span>KURAYA 蔵屋<small>v0.1.0</small></a>
+    <div class="nav-links">
+      <a href="#flow">工作流程</a>
+      <a href="#library">片库</a>
+      <a href="#features">特性</a>
+      <a href="#install">安装</a>
+      <a href="#cli">命令</a>
+    </div>
+    <a class="btn-mini" href="https://github.com/tenngoxars/Kuraya" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</nav>
+
+<!-- ================= Hero ================= -->
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div class="reveal">
+      <span class="badge">影片刮削与编目工具 · <b>v0.1.0</b> · MIT</span>
+      <h1>把散乱的影片，<br>整理成<span class="hl">有序的片库</span></h1>
+      <p class="sub">KURAYA 蔵屋 自动识别番号、抓取元数据与封面，归档整理并生成可离线浏览的片库页面。你的收藏，从一堆文件名，变成一座有模有样的蔵屋。</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#install">开始整理 →</a>
+        <a class="btn btn-ghost" href="#cli">看看命令行</a>
+      </div>
+      <div class="trust">
+        <span>三平台一行安装</span>
+        <span>纯离线片库页</span>
+        <span>本地优先，不上传</span>
+      </div>
+    </div>
+    <div class="hero-art reveal" style="--d:.15s">
+      <div class="hero-glow"></div>
+      <div class="float-badge fb-1"><b>100</b> 部 · 已归档</div>
+      <div class="float-badge fb-2">待整理 2 个文件</div>
+      <div class="mock">
+        <div class="mock-bar"><span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span><span class="mock-url">file:///D:/Media/Library/index.html</span></div>
+        <div class="mock-body">
+          <div class="cover c1"><div class="cover-top"><span class="no">KUR-073</span><span class="qc">1080p</span></div><span class="actor">星野 めい</span></div>
+          <div class="cover c3"><div class="cover-top"><span class="no">ABC-123</span><span class="qc">720p</span></div><span class="actor">白石 りん</span></div>
+          <div class="cover c2"><div class="cover-top"><span class="no">KUR-011</span><span class="qc">4K</span></div><span class="actor">水瀬 あお</span></div>
+          <div class="cover c5"><div class="cover-top"><span class="no">KY-047</span><span class="qc">1080p</span></div><span class="actor">高橋 ひな</span></div>
+          <div class="cover c6"><div class="cover-top"><span class="no">STX-902</span><span class="qc">1080p</span></div><span class="actor">佐藤 まい</span></div>
+          <div class="cover c4"><div class="cover-top"><span class="no">KUR-207</span><span class="qc">4K</span></div><span class="actor">中村 ゆき</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ================= 整理前 vs 整理后 ================= -->
+<section class="sec" id="flow">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">整理前 · 整理后</span>
+      <h2>同一批文件，换个活法</h2>
+      <p class="sub">左边是你熟悉的下载文件夹：站点前缀、乱码、画质标记混成一团。右边是 kuraya 归档后的片库——番号识别、nfo 与海报齐备，目录一目了然。</p>
+    </div>
+    <div class="cmp-grid">
+      <div class="panel reveal">
+        <div class="panel-head p-head-before">整理前 · Downloads <span class="cnt">137 个文件 · 0 个封面</span></div>
+        <ul class="messy">
+          <li><i class="fl-q">?</i>tokyodl.net_KUR-073_HD1080.mkv</li>
+          <li><i class="fl-q">?</i>[TS-080] star-0729 [480p].mp4</li>
+          <li><i class="fl-d">重</i>KUR-011 copy(2).mkv</li>
+          <li><i class="fl-d">!</i>new folder (3)/IMG_9271.mp4</li>
+          <li><i class="fl-q">?</i>ABC-123.HD.unknown-source.avi</li>
+          <li><i class="fl-q">?</i>jvideos.top.998271.m4v</li>
+          <li><i class="fl-d">?</i>vod_20240731_143258_005.mp4</li>
+        </ul>
+      </div>
+      <div class="cmp-arrow reveal" style="--d:.1s"><span class="arr-h">→</span><span class="arr-v">↓</span></div>
+      <div class="panel reveal" style="--d:.15s">
+        <div class="panel-head p-head-after">整理后 · D:\Media\Library <span class="cnt">100 部 · 全部有封面</span></div>
+        <div class="tree"><span class="d">D:\Media\Library\</span>
+<span class="d">├─ 演员\</span>
+<span class="d">│&nbsp;&nbsp;└─ 星野 めい\</span>
+<span class="f">│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ KUR-073-poster.jpg</span>
+<span class="f">│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├─ KUR-073.nfo</span>
+<span class="f">│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─ KUR-073.mp4</span>
+<span class="d">├─ ABC-123\</span>
+<span class="f">│&nbsp;&nbsp;├─ ABC-123.nfo</span>
+<span class="f">│&nbsp;&nbsp;└─ ABC-123.mp4</span>
+<span class="d">├─ KUR-207\</span>
+<span class="f">│&nbsp;&nbsp;├─ KUR-207-poster.jpg</span>
+<span class="f">│&nbsp;&nbsp;└─ KUR-207.mp4</span>
+<span class="f">└─ index.html</span> <span class="c">← 离线片库，双击即开</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 工作流程 ================= -->
+<section class="sec" id="steps">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">工作流程</span>
+      <h2>三步，从杂乱到有序</h2>
+      <p class="sub">识别、归档、重建——每一步都可以单独执行，也可以一条命令走完全程。</p>
+    </div>
+    <div class="step-grid">
+      <div class="step reveal"><div class="num">01 / 识别番号</div><h3>刮削元数据</h3><p>扫描文件名中的番号，联网抓取标题、演员与封面。想先试水？<code style="font-family:var(--mono);font-size:12.5px;color:var(--brand-deep)">scrape --limit 3</code> 只刮三个。</p></div>
+      <div class="step reveal" style="--d:.1s"><div class="num">02 / 归档整理</div><h3>生成 nfo 与海报</h3><p>按 演员名 / 番号 归档到影片库目录，自动生成 nfo 元数据与 poster 海报，结构永远整整齐齐。</p></div>
+      <div class="step reveal" style="--d:.2s"><div class="num">03 / 重建片库</div><h3>输出离线页面</h3><p>一条 <code style="font-family:var(--mono);font-size:12.5px;color:var(--brand-deep)">rebuild</code> 生成可搜索、可筛选、点击即播的 index.html——纯离线，断网也能逛。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 片库预览 ================= -->
+<section class="band sec" id="library">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">片库页预览</span>
+      <h2>生成的片库，长这样</h2>
+      <p class="sub">搜索、筛选、点封面播放——全部发生在一个自包含的 HTML 文件里。没有服务器，双击即开。</p>
+    </div>
+    <div class="browser reveal">
+      <div class="browser-bar">
+        <span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span>
+        <span class="browser-tab">index.html</span>
+      </div>
+      <div class="lib-toolbar">
+        <div class="search"><span class="glass"></span>搜索番号、演员名…</div>
+        <div class="chips">
+          <span class="chip on">全部</span><span class="chip">演员</span><span class="chip">番号</span><span class="chip">1080p</span><span class="chip">4K</span><span class="chip">未观看</span>
+        </div>
+      </div>
+      <div class="lib-grid">
+        <div class="cover c1"><div class="cover-top"><span class="no">KUR-073</span><span class="qc">1080p</span></div><span class="actor">星野 めい</span></div>
+        <div class="cover c2"><div class="cover-top"><span class="no">ABC-123</span><span class="qc">720p</span></div><span class="actor">白石 りん</span></div>
+        <div class="cover c3"><div class="cover-top"><span class="no">KUR-011</span><span class="qc">4K</span></div><span class="actor">水瀬 あお</span></div>
+        <div class="cover c4"><div class="cover-top"><span class="no">KY-047</span><span class="qc">1080p</span></div><span class="actor">高橋 ひな</span></div>
+        <div class="cover c5"><div class="cover-top"><span class="no">STX-902</span><span class="qc">1080p</span></div><span class="actor">佐藤 まい</span></div>
+        <div class="cover c6"><div class="cover-top"><span class="no">KUR-207</span><span class="qc">4K</span></div><span class="actor">中村 ゆき</span></div>
+        <div class="cover c2"><div class="cover-top"><span class="no">RIN-318</span><span class="qc">720p</span></div><span class="actor">星野 めい</span></div>
+        <div class="cover c1"><div class="cover-top"><span class="no">MV-555</span><span class="qc">1080p</span></div><span class="actor">水瀬 あお</span></div>
+      </div>
+      <div class="lib-status">100 部 · index.html 生成于今天 14:32 · 双击即可离线浏览</div>
+    </div>
+    <p class="lib-cap reveal">kuraya rebuild 的产物：一个文件，带走整座片库。</p>
+  </div>
+</section>
+
+<!-- ================= 特性 ================= -->
+<section class="sec" id="features">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">特性</span>
+      <h2>为长期收藏而设计</h2>
+      <p class="sub">不做云同步、不做账号、不做订阅。kuraya 只把你硬盘里的影片整理好，然后安静地待命。</p>
+    </div>
+    <div class="features-grid">
+      <div class="feat reveal"><div class="ico">◈</div><h3>本地优先</h3><p>元数据、海报、片库页全部落在你的硬盘上，不上传任何数据，不依赖任何服务。</p></div>
+      <div class="feat reveal" style="--d:.07s"><div class="ico">◎</div><h3>纯离线片库</h3><p>生成的 index.html 无需服务器、无需联网，双击即开，断网也能完整浏览。</p></div>
+      <div class="feat reveal" style="--d:.14s"><div class="ico">▶</div><h3>点击即播</h3><p>封面经 kuraya: 协议直接调起本机播放器，选片不用先翻目录找文件。</p></div>
+      <div class="feat reveal" style="--d:.21s"><div class="ico">▤</div><h3>三平台二进制</h3><p>macOS、Windows、Linux 各有一行命令安装的预编译版本，开箱即用。</p></div>
+      <div class="feat reveal" style="--d:.28s"><div class="ico">✓</div><h3>无框架测试</h3><p>测试套件零框架依赖，跑得快、看得懂，改起来没有心理负担。</p></div>
+      <div class="feat reveal" style="--d:.35s"><div class="ico">↻</div><h3>一键重建</h3><p>新增文件后运行 kuraya rebuild，片库页永远是最新状态。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 安装 ================= -->
+<section class="sec" id="install">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">安装</span>
+      <h2>一行命令，三平台就位</h2>
+      <p class="sub">预编译二进制，无运行时依赖，装完即用。</p>
+    </div>
+    <div class="install-grid">
+      <div class="inst reveal">
+        <div class="os"><span class="os-dot os-mac"></span>macOS</div>
+        <p>Apple Silicon</p>
+        <div class="code"><button class="copy" aria-label="复制命令">复制</button><span class="p">$</span> brew install tenngoxars/tap/kuraya</div>
+      </div>
+      <div class="inst reveal" style="--d:.1s">
+        <div class="os"><span class="os-dot os-win"></span>Windows</div>
+        <p>PowerShell，一条命令</p>
+        <div class="code"><button class="copy" aria-label="复制命令">复制</button><span class="p">$</span> irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 | iex</div>
+      </div>
+      <div class="inst reveal" style="--d:.2s">
+        <div class="os"><span class="os-dot os-lin"></span>Linux</div>
+        <p>bash，一条命令</p>
+        <div class="code"><button class="copy" aria-label="复制命令">复制</button><span class="p">$</span> curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh | bash</div>
+      </div>
+      <div class="inst-source reveal">
+        <div>
+          <div class="os" style="font-size:15px"><span class="os-dot" style="background:var(--brand)"></span>源码安装</div>
+          <p class="src-note">想改源码或自己打包？<b>pipx install .</b> 需要 Python 3.11+。</p>
+        </div>
+        <div class="code"><button class="copy" aria-label="复制命令">复制</button><span class="p">$</span> pipx install .</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 命令行 ================= -->
+<section class="dark-band sec" id="cli">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">命令行</span>
+      <h2>一个命令，走完全程</h2>
+      <p class="sub">交互式 TUI 一目了然；脚本化时用 --dry-run 演练、--quiet --yes 静默执行。</p>
+    </div>
+    <div class="term reveal">
+      <div class="term-bar"><span class="dot d-r"></span><span class="dot d-y"></span><span class="dot d-g"></span><span class="term-title">kuraya — 80×24</span></div>
+      <div class="term-body"><span class="t-p">$</span> kuraya
+<span class="t-log">◈  K U R A Y A   蔵屋    v0.1.0</span>
+影片库  D:\Media\Library    100 部
+待整理  2 个文件
+<span class="t-mark">1</span> 刮削入库 / <span class="t-mark">2</span> 重建页面 / <span class="t-mark">3</span> 打开片库 / <span class="t-mark">4</span> 设置 / <span class="t-mark">0</span> 退出
+<span class="t-d">&gt; 1</span>
+<span class="t-ok">✓ KUR-073 已归档 → 演员/星野 めい/KUR-073/</span>
+<span class="t-ok">✓ ABC-123 已归档 → ABC-123/</span>
+<span class="t-ok">✓ 片库页已重建 · 100 部 · 离线可用</span></div>
+    </div>
+    <div class="cmd-grid">
+      <div class="cmd reveal"><code>kuraya</code><span>完整流程：刮削 → 归档 → 重建</span></div>
+      <div class="cmd reveal" style="--d:.05s"><code>kuraya scrape --limit 3</code><span>只刮削前 3 个文件，先试试水</span></div>
+      <div class="cmd reveal" style="--d:.1s"><code>kuraya rebuild</code><span>仅重建片库页面 index.html</span></div>
+      <div class="cmd reveal" style="--d:.15s"><code>kuraya selftest</code><span>自检环境与网络连接</span></div>
+      <div class="cmd reveal" style="--d:.2s"><code>kuraya config</code><span>查看或修改配置</span></div>
+      <div class="cmd reveal" style="--d:.25s"><code>--dry-run</code><span>演练模式，不实际改动任何文件</span></div>
+      <div class="cmd reveal" style="--d:.3s"><code>--quiet --yes</code><span>静默执行，全程无交互，适合脚本化</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 页脚 ================= -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <div class="foot-brand">KURAYA <span class="lm">蔵屋</span></div>
+        <p>影片刮削与编目工具。把散乱的影片文件，整理成带封面和元数据的有序收藏——然后生成一座可离线浏览的片库。</p>
+        <div class="disclaimer"><b>关于内容：</b>KURAYA 蔵屋 仅整理你已合法持有的本地文件；不提供、不索引、不分发任何影片内容。</div>
+      </div>
+      <div>
+        <h4>项目</h4>
+        <a href="https://github.com/tenngoxars/Kuraya" target="_blank" rel="noopener">GitHub ↗</a>
+        <a href="https://github.com/tenngoxars/Kuraya/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/tenngoxars/Kuraya/issues" target="_blank" rel="noopener">Issues</a>
+      </div>
+      <div>
+        <h4>页面</h4>
+        <a href="#flow">工作流程</a>
+        <a href="#install">安装</a>
+        <a href="#cli">命令行</a>
+        <a href="#top">回到顶部</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 KURAYA 蔵屋 · v0.1.0 · <b>MIT License</b></span>
+      <span>macOS Apple Silicon · Windows · Linux · Python 3.11+</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* 滚动淡入 */
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+/* 复制命令 */
+document.querySelectorAll('.copy').forEach(b=>b.addEventListener('click',async()=>{
+  const t=b.closest('.code').innerText.replace(/^复制\n|\n$/g,'').replace(/^\$\s*/,'');
+  try{await navigator.clipboard.writeText(t)}catch(e){const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove()}
+  b.textContent='已复制';setTimeout(()=>b.textContent='复制',1400);
+}));
+</script>
+<script>addEventListener('keydown',e=>{if(/INPUT|TEXTAREA/.test(document.activeElement?.tagName||''))return;if(e.key==='ArrowLeft'||e.key==='ArrowRight'){parent.postMessage({type:'proto-nav',dir:e.key==='ArrowLeft'?-1:1},'*');}});</script>
+</body>
+</html>

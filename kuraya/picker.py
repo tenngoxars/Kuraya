@@ -2,14 +2,15 @@
 """
 调用系统原生的文件/目录选择框。
 
-Windows 走 PowerShell 的 Windows.Forms 对话框，避免打包带上 tkinter
-（体积大，见 kuraya.spec 的 excludes）；mac/Linux 走 tkinter，
-打包版与源码版都需要它，构建环境必须带 tkinter。
+Windows 走 PowerShell 的 Windows.Forms 对话框；macOS 走 osascript 原生面板
+（NSOpenPanel，不依赖 tkinter——CI 打包的 Tk 在部分系统上初始化挂起）；
+Linux 走 tkinter。选择框全部不可用时界面降级为终端手动输入路径。
 
 直接运行本文件可做诊断： python -m kuraya.picker
 """
 import os
 import subprocess
+import sys
 
 # 用一个 TopMost 窗体作为宿主，避免对话框被浏览器窗口盖住。
 # 必须先 Show 再 Hide，让窗体真正创建出句柄，否则 ShowDialog 会抛异常。
@@ -74,6 +75,31 @@ def _powershell(script):
     return '', '系统中找不到 powershell'
 
 
+def _osascript(kind, title):
+    """macOS 原生目录/文件面板（NSOpenPanel），不依赖 tkinter——
+    CI 打包的 Tk framework 在部分系统上初始化会挂起，弹不出窗口。"""
+    prompt = title.replace('"', "'")
+    if kind == 'folder':
+        script = f'POSIX path of (choose folder with prompt "{prompt}")'
+    else:
+        script = f'POSIX path of (choose file with prompt "{prompt}")'
+    try:
+        out = subprocess.run(['osascript', '-e', script],
+                             capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return '', '选择框超时未关闭'
+    except (OSError, subprocess.SubprocessError) as exc:
+        return '', f'{type(exc).__name__}: {exc}'
+    path = out.stdout.strip()
+    if out.returncode == 0 and path:
+        return path, ''
+    err = (out.stderr or '').strip()
+    # 用户取消：osascript 退出 1 且提示 User canceled，与「未选择」同义
+    if 'User canceled' in err:
+        return '', ''
+    return '', err or f'osascript 退出码 {out.returncode}'
+
+
 def _tk(kind, title):
     try:
         import tkinter
@@ -99,6 +125,8 @@ def pick(kind='folder', title='请选择'):
         if err:
             return '', err
         return '', ''
+    if sys.platform == 'darwin':
+        return _osascript(kind, title)
     return _tk(kind, title)
 
 

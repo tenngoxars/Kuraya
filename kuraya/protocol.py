@@ -67,6 +67,15 @@ def ensure_registered():
     return ok
 
 
+def _shell_app_ready(base):
+    """base 目录下的壳 app 是否完整可用：Contents/MacOS 下要有可执行文件。
+    后台安装可能被中断留下半成品目录，只有目录骨架不算装好。
+    play_mode 与 ensure_shell_app 共用同一判定，避免一处判好一处判坏。
+    """
+    macos = Path(base) / 'Kuraya.app' / 'Contents' / 'MacOS'
+    return macos.is_dir() and any(macos.iterdir())
+
+
 def ensure_shell_app():
     """
     打包版在 macOS 上的点击封面播放：把随包分发的 Kuraya.app
@@ -78,7 +87,7 @@ def ensure_shell_app():
     if sys.platform != 'darwin' or not getattr(sys, 'frozen', False):
         return False
     target = Path.home() / 'Applications' / 'Kuraya.app'
-    if target.is_dir():
+    if _shell_app_ready(target.parent):
         return True
     # 随包位置：zip/brew/脚本安装的壳 app 都在 exe 父级（如 ~/.local/opt/Kuraya.app、
     # libexec/Kuraya.app），exe 同级只兜底手动布局
@@ -110,8 +119,7 @@ def play_mode():
         # mac 依赖首次运行自装的壳 app（~/Applications/Kuraya.app）
         home = Path.home()
         apps = (home / 'Applications', Path('/Applications'))
-        return 'protocol' if any((base / 'Kuraya.app').is_dir()
-                                 for base in apps) else 'copy'
+        return 'protocol' if any(_shell_app_ready(base) for base in apps) else 'copy'
     # Linux: 看 xdg 是否已注册 kuraya: 协议处理器（安装脚本负责注册）
     try:
         out = subprocess.run(

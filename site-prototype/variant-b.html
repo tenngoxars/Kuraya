@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KURAYA 蔵屋 — 影片刮削与编目工具</title>
+<meta name="description" content="KURAYA 蔵屋：本地影片刮削与编目 CLI 工具。识别番号、抓取元数据、整理归档、生成可离线浏览的片库页面。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0d0a; --bg2:#0d120d; --term:#060906; --bar:#111711;
+  --fg:#c9d6c9; --hi:#eaf4ea; --dim:#5c6c5c; --mut:#8ba08b;
+  --grn:#3dff74; --grn-soft:#24402c; --amb:#ffb454;
+  --brd:#1e2b1e; --brd2:#2c3d2c;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;z-index:-1;background:radial-gradient(900px 460px at 50% -140px,rgba(61,255,116,.07),transparent 62%)}
+::selection{background:rgba(61,255,116,.28)}
+:focus-visible{outline:2px solid var(--grn);outline-offset:2px}
+a{color:var(--grn);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px}
+.ps{color:var(--grn)}
+.dim{color:var(--dim)}
+.grn{color:var(--grn)}
+
+/* ── 导航 ── */
+.nav{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 20px;border-bottom:1px solid var(--brd);position:sticky;top:0;z-index:20;background:rgba(10,13,10,.97);backdrop-filter:blur(6px)}
+.nav-brand{color:var(--hi);font-weight:700;font-size:14px;letter-spacing:.05em;white-space:nowrap}
+.nav-links{display:flex;gap:18px;font-size:12.5px;flex-wrap:wrap}
+.nav-links a{color:var(--mut)}
+.nav-links a:hover{color:var(--grn);text-decoration:none}
+
+/* ── Hero ── */
+.hero{padding-top:44px}
+.term{border:1px solid var(--brd);border-radius:10px;background:var(--term);box-shadow:0 30px 70px rgba(0,0,0,.55);overflow:hidden}
+.term-bar{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bar);border-bottom:1px solid var(--brd);font-size:11.5px;color:var(--dim)}
+.dots{display:flex;gap:6px}
+.dots i{width:11px;height:11px;border-radius:50%}
+.d-r{background:#ff5f57}.d-y{background:#febc2e}.d-g{background:#28c840}
+.term-title{margin-left:6px;letter-spacing:.04em}
+.term-body{padding:14px 16px;min-height:200px;font-size:13.5px;line-height:1.62;overflow-x:auto;color:var(--fg)}
+.ln{white-space:pre}
+.ln-cmd{color:var(--hi)}
+.ln-title{color:var(--grn);font-weight:700}
+.ln-ok{color:var(--grn)}
+.ln-dim{color:var(--dim)}
+.ln-amb{color:var(--amb)}
+.cur{display:inline-block;width:.58em;height:1.12em;background:var(--grn);vertical-align:-.18em;animation:blink 1.06s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.logo{margin-top:42px;overflow-x:auto}
+.logo pre{width:max-content;margin:0 auto;font-size:clamp(12px,3.9vw,30px);line-height:1.06;color:#d9e6d9;text-shadow:0 0 26px rgba(61,255,116,.14);font-weight:700}
+.tagline{margin:20px auto 0;max-width:58ch;text-align:center;font-size:16px;color:var(--fg)}
+.cta{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:24px}
+.btn{font:inherit;font-weight:700;font-size:14px;background:var(--grn);color:#07240f;border:0;padding:11px 20px;border-radius:4px;cursor:pointer;transition:filter .15s ease}
+.btn:hover{filter:brightness(1.12)}
+.btn.ghost{background:transparent;color:var(--grn);border:1px solid var(--brd2)}
+.btn.ghost:hover{background:rgba(61,255,116,.07);text-decoration:none}
+.ver{font-size:12px;color:var(--dim)}
+
+/* ── 区块 ── */
+.sec{margin-top:88px;scroll-margin-top:80px}
+.sec h2{font-size:19px;font-weight:700;color:var(--hi);padding-bottom:10px;border-bottom:1px dashed var(--brd2);letter-spacing:.03em}
+.sec h2 .n{color:var(--grn);margin-right:12px}
+.sec h2 .dim{font-size:12px;font-weight:400;margin-left:10px}
+.lead{margin:16px 0 28px;color:var(--mut);max-width:74ch;font-size:14px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.step{border:1px solid var(--brd);background:var(--bg2);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.step-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:14px;font-weight:700;color:var(--hi)}
+.step-h .k{color:var(--grn);margin-right:2px}
+.step-h .dim{font-size:11.5px;font-weight:400;white-space:nowrap}
+.step p{font-size:13px;color:var(--mut);flex:1}
+.files{display:flex;gap:6px;flex-wrap:wrap;font-size:11.5px;color:var(--dim)}
+.files span{border:1px solid var(--brd);background:var(--term);padding:2px 7px;border-radius:3px}
+
+/* ── 片库预览 ── */
+.win{border:1px solid var(--brd);border-radius:10px;background:var(--term);box-shadow:0 30px 70px rgba(0,0,0,.5);overflow:hidden}
+.win-term .out{padding:14px 16px;font-size:13px;line-height:1.7;white-space:pre;overflow-x:auto;color:var(--fg)}
+.win-term .ok{color:var(--grn)}
+.win-term .amb{color:var(--amb)}
+.browser{background:var(--bg2);border-top:1px dashed var(--brd2)}
+.browser .bar{display:flex;justify-content:center;padding:8px 12px;background:var(--bar);border-bottom:1px solid var(--brd)}
+.browser .url{background:var(--term);border:1px solid var(--brd);border-radius:99px;padding:3px 14px;font-size:11.5px;color:var(--dim);max-width:72%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.browser-tools{padding:12px 14px 2px;display:flex;flex-direction:column;gap:10px}
+.q{font:inherit;font-size:12.5px;background:var(--term);border:1px solid var(--brd2);color:var(--fg);padding:7px 12px;border-radius:4px;width:100%;caret-color:var(--grn)}
+.q::placeholder{color:var(--dim)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11px;padding:3px 10px;border:1px solid var(--brd2);border-radius:99px;color:var(--mut)}
+.chip.on{color:var(--grn);border-color:var(--grn-soft);background:rgba(61,255,116,.07)}
+.covers{list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;padding:14px}
+.cover{position:relative;aspect-ratio:2/3;border:1px solid rgba(255,255,255,.09);border-radius:4px;background:linear-gradient(160deg,var(--c1,#333),var(--c2,#111));display:flex;flex-direction:column;justify-content:space-between;padding:8px 9px;cursor:pointer;transition:transform .12s ease-out,border-color .12s ease}
+.cover:hover{transform:translateY(-3px);border-color:var(--grn)}
+.cover .tag{font-size:9px;color:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.3);border-radius:2px;padding:1px 4px;align-self:flex-start;font-weight:500}
+.cover b{font-size:12px;color:rgba(255,255,255,.93);letter-spacing:.04em}
+.cover em{font-style:normal;font-size:9px;color:rgba(255,255,255,.55)}
+.cover::after{content:"▶";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;background:rgba(0,0,0,.38);opacity:0;transition:opacity .12s ease}
+.cover:hover::after{opacity:1}
+.browser-foot{padding:0 14px 12px;font-size:11px;color:var(--dim)}
+
+/* ── 特性 ── */
+.feature-out{padding:14px 16px;font-size:13px;line-height:1.75;white-space:pre;overflow-x:auto;color:var(--fg)}
+.feature-out .fl{color:var(--grn);font-weight:700}
+
+/* ── 安装 ── */
+.install-box{border:1px solid var(--brd);border-radius:8px;overflow:hidden;background:var(--bg2)}
+.tabs{display:flex;gap:2px;flex-wrap:wrap;border-bottom:1px solid var(--brd)}
+.tab{font:inherit;font-size:13px;padding:9px 18px;background:none;border:0;border-right:1px solid var(--brd);color:var(--mut);cursor:pointer;transition:color .12s ease}
+.tab:hover{color:var(--fg)}
+.tab.on{color:var(--grn);background:var(--term);box-shadow:inset 0 -2px 0 var(--grn)}
+.pane{display:none;padding:18px}
+.pane.on{display:block;animation:fadein .18s ease}
+@keyframes fadein{from{opacity:0}}
+.cmdline{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;background:var(--term);border:1px solid var(--brd);border-radius:6px;padding:12px 14px}
+.cmdline code{flex:1;min-width:200px;font-family:inherit;font-size:13px;color:var(--hi);word-break:break-all;white-space:pre-wrap}
+.note{margin-top:10px;font-size:12px;color:var(--dim)}
+.copy{font:inherit;font-size:11px;padding:4px 10px;background:transparent;color:var(--grn);border:1px solid var(--grn-soft);border-radius:4px;cursor:pointer;transition:background .12s ease}
+.copy:hover{background:rgba(61,255,116,.08)}
+
+/* ── CLI 速览 ── */
+.table-wrap{overflow-x:auto;border:1px solid var(--brd);border-radius:8px;background:var(--bg2)}
+.cli{width:100%;border-collapse:collapse;font-size:13px;min-width:560px}
+.cli th{text-align:left;color:var(--dim);font-weight:400;font-size:11px;letter-spacing:.1em;padding:10px 14px;border-bottom:1px solid var(--brd)}
+.cli td{padding:9px 14px;border-bottom:1px solid var(--brd);vertical-align:middle}
+.cli tr:last-child td{border-bottom:0}
+.cli tr:hover td{background:rgba(61,255,116,.03)}
+.cli td.cmd{white-space:nowrap;color:var(--hi)}
+.cli td.desc{color:var(--dim);font-size:12px}
+.cli .copy{float:right}
+
+/* ── 页脚 ── */
+.foot{border-top:1px solid var(--brd);margin-top:88px;padding:28px 20px 44px;display:flex;flex-direction:column;gap:14px;font-size:13px}
+.foot b{color:var(--hi)}
+.foot .decl{color:var(--dim);max-width:72ch}
+.exit{color:var(--dim);margin-top:6px}
+
+@media (max-width:720px){
+  .hero{padding-top:28px}
+  .term-body{font-size:12.5px;min-height:182px}
+  .tagline{font-size:14.5px}
+  .steps{grid-template-columns:1fr}
+  .sec{margin-top:56px}
+  .logo pre{line-height:1.08}
+  .nav-links{gap:12px;font-size:12px}
+}
+@media (prefers-reduced-motion:reduce){.cur{animation:none}}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <a class="nav-brand" href="#top">KURAYA(1) <span class="dim">蔵屋</span></a>
+  <nav class="nav-links">
+    <a href="#flow">流程</a>
+    <a href="#library">片库</a>
+    <a href="#features">特性</a>
+    <a href="#install">安装</a>
+    <a href="#cli">速览</a>
+    <a href="https://github.com/tenngoxars/Kuraya" target="_blank" rel="noopener">GitHub ↗</a>
+  </nav>
+</header>
+
+<section class="hero wrap" id="top">
+  <div class="term" role="img" aria-label="KURAYA 终端界面演示：正在运行主菜单">
+    <div class="term-bar">
+      <span class="dots"><i class="d-r"></i><i class="d-y"></i><i class="d-g"></i></span>
+      <span class="term-title">kuraya — zsh — 80×24</span>
+    </div>
+    <div class="term-body" id="tty"></div>
+  </div>
+
+  <h1 class="logo" aria-label="KURAYA 蔵屋"><pre>█   █ █   █ ███    ███  █   █  ███ 
+█  █  █   █ █   █ █   █ █   █ █   █
+█ █   █   █ █   █ █   █  █ █  █   █
+██    █   █ ███   █████   █   █████
+█ █   █   █ █ █   █   █   █   █   █
+█  █  █   █ █  █  █   █   █   █   █
+█   █  ███  █   █ █   █   █   █   █</pre></h1>
+  <p class="tagline">影片刮削与编目工具 —— 把散乱的影片文件整理成带封面和元数据的有序收藏，并生成可离线浏览的片库页面。</p>
+  <div class="cta">
+    <button class="btn" data-copy="brew install tenngoxars/tap/kuraya" title="复制安装命令">复制安装命令</button>
+    <a class="btn ghost" href="https://github.com/tenngoxars/Kuraya" target="_blank" rel="noopener">GitHub 仓库 ↗</a>
+    <span class="ver">v0.1.0 · MIT</span>
+  </div>
+</section>
+
+<section class="wrap sec" id="flow">
+  <h2><span class="n">01</span>它是什么</h2>
+  <p class="lead">KURAYA 是跑在你本机上的命令行工具：<span class="grn">识别番号 → 抓取元数据 → 整理归档 → 生成片库页</span>。不建账号、不上传文件，一切发生在本地。</p>
+  <div class="steps">
+    <article class="step">
+      <div class="step-h"><span><span class="k">01</span>识别</span><span class="dim">$ kuraya scrape</span></div>
+      <p>扫描目录，从文件名提取番号（KUR-001），联网获取元数据与封面。可用 <span class="grn">--dry-run</span> 先演练。</p>
+      <div class="files"><span>KUR-001.json</span><span>poster.jpg</span></div>
+    </article>
+    <article class="step">
+      <div class="step-h"><span><span class="k">02</span>归档</span><span class="dim">$ kuraya</span></div>
+      <p>按 演员名 / 番号 整理目录结构，为每部影片写出 nfo 与海报，方便其他刮削器与播放器识别。</p>
+      <div class="files"><span>演员名/KUR-001/</span><span>movie.nfo</span></div>
+    </article>
+    <article class="step">
+      <div class="step-h"><span><span class="k">03</span>重建</span><span class="dim">$ kuraya rebuild</span></div>
+      <p>生成纯离线 index.html：可搜索、可筛选，点封面经 <span class="grn">kuraya:</span> 协议直接调起本机播放器。</p>
+      <div class="files"><span>index.html</span><span>2.4 MB</span></div>
+    </article>
+  </div>
+</section>
+
+<section class="wrap sec" id="library">
+  <h2><span class="n">02</span>片库页预览 <span class="dim">$ kuraya rebuild</span></h2>
+  <p class="lead">一次 rebuild，产出可双击打开的离线页面 ——</p>
+  <div class="win">
+    <div class="win-term">
+      <div class="term-bar"><span class="dots"><i class="d-r"></i><i class="d-y"></i><i class="d-g"></i></span><span class="term-title">kuraya rebuild</span></div>
+      <pre class="out"><span class="ps">$</span> kuraya rebuild
+<span class="ok">  ✓</span> 扫描影片库<span class="dim"> …</span> 100 部
+<span class="ok">  ✓</span> 生成 nfo / 海报<span class="dim"> …</span> 100 份
+<span class="ok">  ✓</span> 写出 index.html<span class="dim"> …</span> 2.4 MB
+<span class="amb">  ▶</span> file:///D:/Media/Library/index.html</pre>
+    </div>
+    <div class="browser">
+      <div class="bar"><span class="url">file:///D:/Media/Library/index.html</span></div>
+      <div class="browser-tools">
+        <input class="q" placeholder="搜索 番号 / 演员 / 标签 …" readonly>
+        <div class="chips"><span class="chip on">全部</span><span class="chip">4K</span><span class="chip">HD</span><span class="chip">演员</span><span class="chip">番号</span></div>
+      </div>
+      <ul class="covers" aria-label="片库封面网格（示意，封面为抽象色块）">
+        <li class="cover" style="--c1:#8c2f3a;--c2:#241014"><span class="tag">4K</span><b>KUR-001</b><em>kuraya://KUR-001</em></li>
+        <li class="cover" style="--c1:#155e54;--c2:#0b2421"><span class="tag">HD</span><b>ABC-123</b><em>kuraya://ABC-123</em></li>
+        <li class="cover" style="--c1:#b0561e;--c2:#2e1408"><span class="tag">4K</span><b>MMD-404</b><em>kuraya://MMD-404</em></li>
+        <li class="cover" style="--c1:#2f4a8c;--c2:#101630"><span class="tag">HD</span><b>SIV-777</b><em>kuraya://SIV-777</em></li>
+        <li class="cover" style="--c1:#7a3b8c;--c2:#1f0f26"><span class="tag">4K</span><b>KUR-118</b><em>kuraya://KUR-118</em></li>
+        <li class="cover" style="--c1:#a32020;--c2:#260a0a"><span class="tag">HD</span><b>RED-666</b><em>kuraya://RED-666</em></li>
+        <li class="cover" style="--c1:#1e6e3d;--c2:#0a2413"><span class="tag">4K</span><b>VEN-055</b><em>kuraya://VEN-055</em></li>
+        <li class="cover" style="--c1:#5a6472;--c2:#161a1f"><span class="tag">HD</span><b>GRA-202</b><em>kuraya://GRA-202</em></li>
+        <li class="cover" style="--c1:#6b6b1f;--c2:#1c1c08"><span class="tag">HD</span><b>KUR-042</b><em>kuraya://KUR-042</em></li>
+        <li class="cover" style="--c1:#8a6a3a;--c2:#241a0e"><span class="tag">4K</span><b>MOM-999</b><em>kuraya://MOM-999</em></li>
+      </ul>
+      <div class="browser-foot">100 部影片 · 12 页 · 全部离线</div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap sec" id="features">
+  <h2><span class="n">03</span>特性 <span class="dim">$ kuraya --features</span></h2>
+  <div class="term">
+    <div class="term-bar"><span class="dots"><i class="d-r"></i><i class="d-y"></i><i class="d-g"></i></span><span class="term-title">kuraya --features</span></div>
+    <pre class="feature-out"><span class="ps">$</span> kuraya --features
+  <span class="fl">local-first</span>    本地优先：元数据、封面与页面全部保存在本机
+  <span class="fl">offline</span>        纯离线片库：搜索与筛选零网络请求
+  <span class="fl">play</span>           kuraya: 协议：点封面调起本机播放器
+  <span class="fl">no-framework</span>  TUI 与测试零框架依赖
+  <span class="fl">binaries</span>       三平台二进制：macOS / Windows / Linux 一键安装</pre>
+  </div>
+</section>
+
+<section class="wrap sec" id="install">
+  <h2><span class="n">04</span>安装</h2>
+  <div class="install-box">
+    <div class="tabs" role="tablist" aria-label="安装平台">
+      <button class="tab on" role="tab" aria-selected="true" data-tab="mac">macOS</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="win">Windows</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="linux">Linux</button>
+      <button class="tab" role="tab" aria-selected="false" data-tab="src">源码</button>
+    </div>
+    <div class="pane on" id="pane-mac">
+      <div class="cmdline"><span class="ps">$</span><code>brew install tenngoxars/tap/kuraya</code><button class="copy" data-copy="brew install tenngoxars/tap/kuraya" title="复制">复制</button></div>
+      <p class="note"># macOS（Apple Silicon，M 系列芯片）</p>
+    </div>
+    <div class="pane" id="pane-win">
+      <div class="cmdline"><span class="ps">PS&gt;</span><code>irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 | iex</code><button class="copy" data-copy="irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 | iex" title="复制">复制</button></div>
+      <p class="note"># Windows：在 PowerShell 中执行</p>
+    </div>
+    <div class="pane" id="pane-linux">
+      <div class="cmdline"><span class="ps">$</span><code>curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh | bash</code><button class="copy" data-copy="curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh | bash" title="复制">复制</button></div>
+      <p class="note"># Linux：需要 curl 与 bash</p>
+    </div>
+    <div class="pane" id="pane-src">
+      <div class="cmdline"><span class="ps">$</span><code>pipx install .</code><button class="copy" data-copy="pipx install ." title="复制">复制</button></div>
+      <p class="note"># 源码安装：需要 Python 3.11+ 与 pipx</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap sec" id="cli">
+  <h2><span class="n">05</span>命令行速览</h2>
+  <div class="table-wrap">
+    <table class="cli">
+      <tr><th>命令</th><th>说明</th><th style="width:64px"></th></tr>
+      <tr><td class="cmd"><span class="ps">$</span> kuraya</td><td class="desc"><span class="dim">#</span> 完整流程：刮削 → 归档 → 重建</td><td><button class="copy" data-copy="kuraya" title="复制">复制</button></td></tr>
+      <tr><td class="cmd"><span class="ps">$</span> kuraya scrape --limit 3</td><td class="desc"><span class="dim">#</span> 只处理前 3 个文件（先演练）</td><td><button class="copy" data-copy="kuraya scrape --limit 3" title="复制">复制</button></td></tr>
+      <tr><td class="cmd"><span class="ps">$</span> kuraya rebuild</td><td class="desc"><span class="dim">#</span> 仅重建片库页面</td><td><button class="copy" data-copy="kuraya rebuild" title="复制">复制</button></td></tr>
+      <tr><td class="cmd"><span class="ps">$</span> kuraya selftest</td><td class="desc"><span class="dim">#</span> 自检：环境、依赖与网络</td><td><button class="copy" data-copy="kuraya selftest" title="复制">复制</button></td></tr>
+      <tr><td class="cmd"><span class="ps">$</span> kuraya config</td><td class="desc"><span class="dim">#</span> 查看 / 修改配置</td><td><button class="copy" data-copy="kuraya config" title="复制">复制</button></td></tr>
+      <tr><td class="cmd"><span class="ps">$</span> kuraya --dry-run</td><td class="desc"><span class="dim">#</span> 演练模式：只演示，不落盘</td><td><button class="copy" data-copy="kuraya --dry-run" title="复制">复制</button></td></tr>
+      <tr><td class="cmd"><span class="ps">$</span> kuraya --quiet --yes</td><td class="desc"><span class="dim">#</span> 静默 + 自动确认，适合脚本</td><td><button class="copy" data-copy="kuraya --quiet --yes" title="复制">复制</button></td></tr>
+    </table>
+  </div>
+</section>
+
+<footer class="foot wrap">
+  <div>
+    <b>KURAYA 蔵屋</b> <span class="dim">· v0.1.0 · MIT License</span><br>
+    <span class="dim">GitHub：</span><a href="https://github.com/tenngoxars/Kuraya" target="_blank" rel="noopener">tenngoxars/Kuraya</a>
+  </div>
+  <p class="decl">声明：KURAYA 仅整理你已合法持有的本地文件；不提供、不索引、不分发任何影片内容。</p>
+  <p class="exit"><span class="dim">$</span> exit 0 <span class="cur"></span></p>
+</footer>
+
+<script>
+/* ── Hero 终端打字机 ── */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const LINES=[
+  {t:'kuraya',c:'cmd'},
+  {t:'◈  K U R A Y A   蔵屋    v0.1.0',c:'title'},
+  {t:'影片库  D:\\Media\\Library    100 部'},
+  {t:'待整理  2 个文件'},
+  {t:'1 刮削入库 / 2 重建页面 / 3 打开片库 / 4 设置 / 0 退出',c:'amb'},
+  {t:'选择 > 1',c:'amb'},
+  {t:'✓ 刮削完成 · 2 个文件已入库（KUR-118 / ABC-123）',c:'ok'}
+];
+const tty=document.getElementById('tty');
+const CUR='<span class="cur"></span>';
+function lineHTML(L,n){
+  let body=esc(L.t.slice(0,n));
+  if(L.c==='cmd')body='<span class="ps">$ </span>'+body;
+  return '<div class="ln'+(L.c?' ln-'+L.c:'')+'">'+body+'</div>';
+}
+async function ttyLoop(){
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let done='';
+  for(const L of LINES){
+    if(reduce){done+=lineHTML(L,L.t.length);continue;}
+    for(let n=1;n<=L.t.length;n++){
+      tty.innerHTML=done+lineHTML(L,n)+CUR;
+      await sleep(24);
+    }
+    done+=lineHTML(L,L.t.length);
+    tty.innerHTML=done+CUR;
+    await sleep(170);
+  }
+  if(reduce){tty.innerHTML=done+CUR;return;}
+  await sleep(3000);
+  tty.textContent='';
+  ttyLoop();
+}
+if(tty)ttyLoop();
+
+/* ── 复制按钮 ── */
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-copy]');
+  if(!b)return;
+  const txt=b.dataset.copy;
+  const done=()=>{
+    const old=b.textContent;
+    b.textContent='✓ 已复制';
+    setTimeout(()=>b.textContent=old,1600);
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(()=>fallback());
+  }else{fallback();}
+  function fallback(){
+    const ta=document.createElement('textarea');
+    ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');}catch(_){}
+    ta.remove();done();
+  }
+});
+
+/* ── 安装平台 tab ── */
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>{x.classList.remove('on');x.setAttribute('aria-selected','false');});
+  t.classList.add('on');t.setAttribute('aria-selected','true');
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+  const pane=document.getElementById('pane-'+t.dataset.tab);
+  if(pane)pane.classList.add('on');
+}));
+</script>
+<script>addEventListener('keydown',e=>{if(/INPUT|TEXTAREA/.test(document.activeElement?.tagName||''))return;if(e.key==='ArrowLeft'||e.key==='ArrowRight'){parent.postMessage({type:'proto-nav',dir:e.key==='ArrowLeft'?-1:1},'*');}});</script>
+</body>
+</html>

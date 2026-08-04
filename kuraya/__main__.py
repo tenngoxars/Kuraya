@@ -10,6 +10,7 @@ import os
 import runpy
 import subprocess
 import sys
+import threading
 
 from . import protocol, settings
 from .settings import FROZEN
@@ -223,7 +224,9 @@ def main():
     if argv and argv[0] in INTERNAL:
         return run_internal(INTERNAL[argv[0]], argv[1:])
 
-    protocol.ensure_shell_app()
+    # 首次运行后台自装点击封面播放用的壳 app。lsregister 首次初始化
+    # LaunchServices 数据库可能卡很久且 Ctrl+C 无效，不能阻塞主流程
+    threading.Thread(target=protocol.ensure_shell_app, daemon=True).start()
 
     if argv and argv[0] == '--play':
         return do_play(argv[1] if len(argv) > 1 else '')

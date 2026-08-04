@@ -60,19 +60,19 @@ class PlayMode(unittest.TestCase):
     @mock.patch.object(protocol.sys, 'platform', 'darwin')
     @mock.patch.object(protocol.os, 'name', 'posix')
     @mock.patch('pathlib.Path.home')
-    @mock.patch('pathlib.Path.is_dir')
-    def test_mac_with_shell_app(self, is_dir, home):
+    @mock.patch('kuraya.protocol._shell_app_ready', side_effect=[False, True])
+    def test_mac_with_shell_app(self, ready, home):
+        """home 下没有、系统级 /Applications 有壳 app 时同样走协议"""
         home.return_value = Path('/Users/x')
-        is_dir.side_effect = [True, True]
         self.assertEqual(protocol.play_mode(), 'protocol')
+        self.assertEqual(ready.call_count, 2)
 
     @mock.patch.object(protocol.sys, 'platform', 'darwin')
     @mock.patch.object(protocol.os, 'name', 'posix')
     @mock.patch('pathlib.Path.home')
-    @mock.patch('pathlib.Path.is_dir')
-    def test_mac_without_shell_app(self, is_dir, home):
+    @mock.patch('kuraya.protocol._shell_app_ready', side_effect=[False, False])
+    def test_mac_without_shell_app(self, ready, home):
         home.return_value = Path('/Users/x')
-        is_dir.side_effect = [False, False]
         self.assertEqual(protocol.play_mode(), 'copy')
 
     @mock.patch.object(protocol.sys, 'platform', 'linux')
@@ -112,13 +112,38 @@ class EnsureShellApp(unittest.TestCase):
     def test_already_installed(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / 'home'
-            (home / 'Applications' / 'Kuraya.app').mkdir(parents=True)
+            macos = home / 'Applications' / 'Kuraya.app' / 'Contents' / 'MacOS'
+            macos.mkdir(parents=True)
+            (macos / 'Kuraya').write_text('')
             with mock.patch.object(protocol.sys, 'platform', 'darwin'), \
                     mock.patch.object(protocol.sys, 'frozen', True, create=True), \
                     mock.patch('pathlib.Path.home', return_value=home), \
                     mock.patch('kuraya.protocol.subprocess.run') as run:
                 self.assertTrue(protocol.ensure_shell_app())
             run.assert_not_called()
+
+    def test_half_installed_is_reinstalled(self):
+        """后台安装被中断（Contents/MacOS 已建但为空）时，应重装而不是跳过"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / 'opt' / 'kuraya' / 'Kuraya'
+            exe.parent.mkdir(parents=True)
+            exe.write_text('')
+            src = root / 'opt' / 'Kuraya.app'
+            (src / 'Contents' / 'MacOS').mkdir(parents=True)
+            (src / 'Contents' / 'MacOS' / 'Kuraya').write_text('')
+            home = root / 'home'
+            half = home / 'Applications' / 'Kuraya.app' / 'Contents' / 'MacOS'
+            half.mkdir(parents=True)  # 只有空 MacOS 目录，没有可执行文件
+            with mock.patch.object(protocol.sys, 'platform', 'darwin'), \
+                    mock.patch.object(protocol.sys, 'frozen', True, create=True), \
+                    mock.patch.object(protocol.sys, 'executable', str(exe)), \
+                    mock.patch('pathlib.Path.home', return_value=home), \
+                    mock.patch('kuraya.protocol.subprocess.run') as run:
+                self.assertTrue(protocol.ensure_shell_app())
+            # 重装后 MacOS 下有可执行文件，且重新注册过 lsregister
+            self.assertTrue((half / 'Kuraya').is_file())
+            run.assert_called_once()
 
     def test_no_source_app(self):
         with tempfile.TemporaryDirectory() as tmp:

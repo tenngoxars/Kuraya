@@ -185,7 +185,12 @@ def update(yes=False, quiet=False):
         # Windows 上若程序自身的 CWD 在目标目录内，目录重命名会被拒绝
         # （WinError 5），先切到临时目录消除自身占用
         os.chdir(tempfile.gettempdir())
+        if not quiet:
+            print(f'  {C.GOLD}◈{C.RESET} '
+                  f'{tr("正在下载 v{remote}...", remote=remote)}')
         new, tmp = _download(remote)
+        if not quiet:
+            print(f'  {C.GOLD}◈{C.RESET} {tr("正在替换程序目录...")}')
         target = Path(sys.executable).parent
         app_src = tmp / 'x' / 'Kuraya.app'
         app_target = target.parent / 'Kuraya.app'

@@ -134,6 +134,8 @@ TABLE = {
     '仅 Windows 支持自定义协议': 'Custom protocols are Windows-only',
     '已在 PATH 中': 'Already in PATH',
     '  正在核对 javbus 的解析规则，需要联网……': '  Verifying javbus parsing rules — requires network…',
+    '正在下载 v{remote}...': 'Downloading v{remote}...',
+    '正在替换程序目录...': 'Replacing the program folder...',
     '  {failed} 个番号未能取全字段。': '  {failed} number(s) missing fields.',
     '  若全部失败，多半是站点改版或网络不通；': '  If all failed, the site likely changed or the network is down;',
     '  个别失败通常是该条目本身信息不全，可以忽略。': '  Occasional failures usually mean that entry is incomplete — safe to ignore.',

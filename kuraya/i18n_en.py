@@ -158,6 +158,7 @@ TABLE = {
     '下载或解压失败：{kind}': 'Download or extract failed: {kind}',
     '安装包结构不符，已放弃（现有安装未动）': 'Package structure mismatch — aborted (existing install untouched)',
     '替换程序目录失败：{exc}': 'Failed to replace the program directory: {exc}',
+    '（Windows 上常见原因：有窗口停留在程序目录内，或安全软件正在扫描，关闭后重试）': ' (Windows: a window may be open inside the program folder, or security software is scanning — close them and retry)',
     '影片刮削与编目': 'Movie scraper & cataloger',
     '。不带参数运行则执行完整入库流程。': '. Running without arguments performs the full archiving flow.',
     '命令': 'command',

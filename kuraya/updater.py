@@ -379,12 +379,23 @@ def _replace(new_dir, target):
     if backup.exists():
         shutil.rmtree(backup, ignore_errors=True)
     try:
-        target.rename(backup)
+        # Windows 上目录可能被杀软/资源管理器短暂占用，重试几次再放弃
+        for attempt in range(6):
+            try:
+                target.rename(backup)
+                break
+            except OSError:
+                if attempt == 5:
+                    raise
+                time.sleep(0.8)
         try:
             shutil.move(str(new_dir), str(target))
         except OSError:
             backup.rename(target)
             raise
     except OSError as exc:
-        raise UpdateError(tr("替换程序目录失败：{exc}", exc=exc)) from exc
+        hint = (tr('（Windows 上常见原因：有窗口停留在程序目录内，'
+                    '或安全软件正在扫描，关闭后重试）')
+                if os.name == 'nt' else '')
+        raise UpdateError(tr('替换程序目录失败：{exc}', exc=exc) + hint) from exc
     shutil.rmtree(backup, ignore_errors=True)

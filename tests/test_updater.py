@@ -284,6 +284,31 @@ class Replace(unittest.TestCase):
         self.assertEqual((self.target / 'old.txt').read_text(), 'old')
         self.assertFalse((self.root / 'Kuraya.old').exists())
 
+    def test_retries_transient_rename_failure(self):
+        """Windows 上目录可能被杀软短暂占用，rename 失败要重试"""
+        real_rename = Path.rename
+        calls = {'n': 0}
+
+        def flaky(self_, dst):
+            calls['n'] += 1
+            if calls['n'] <= 2:
+                raise OSError('Access is denied')
+            return real_rename(self_, dst)
+
+        with mock.patch.object(Path, 'rename', flaky):
+            updater._replace(self.new, self.target)
+        self.assertEqual((self.target / 'new.txt').read_text(), 'new')
+        self.assertEqual(calls['n'], 3)
+
+    def test_gives_up_after_retries(self):
+        real_rename = Path.rename
+        with mock.patch.object(Path, 'rename',
+                               side_effect=OSError('Access is denied')):
+            with self.assertRaises(updater.UpdateError):
+                updater._replace(self.new, self.target)
+        # 旧目录未被破坏（rename 始终失败，原样保留）
+        self.assertTrue((self.root / 'Kuraya').is_dir())
+
 
 class UpdateCommand(unittest.TestCase):
     """`kuraya update` 命令的完整流程"""

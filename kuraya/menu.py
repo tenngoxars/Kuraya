@@ -92,9 +92,10 @@ def menu_loop(draw_header, options, selected=0):
                     f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}')
         say()
         hint = tr('↑↓ 选择 · 回车 确认 · Esc 返回')
-        print(f'  {C.FAINT}{hint}{C.RESET} ', end='', flush=True)
+        # 完整换行输出：光标落在下一行行首，不悬停在行尾
+        # （悬停会让终端/Warp 把提示行当输入块，方向键被拦截）
+        print(f'  {C.FAINT}{hint}{C.RESET}')
         key = read_key()
-        print()
         if key == 'up':
             selected = (selected - 1) % len(options)
         elif key == 'down':
@@ -199,9 +200,8 @@ def language_label(code):
 def pause():
     """回车或 Esc 返回菜单"""
     from .keys import read_key
-    print(f'\n  {C.FAINT}{tr("按回车返回菜单")}{C.RESET} ', end='', flush=True)
+    print(f'\n  {C.FAINT}{tr("按回车返回菜单")}{C.RESET}')
     read_key()
-    print()
 
 
 def language_menu():

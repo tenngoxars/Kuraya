@@ -93,10 +93,8 @@ def offer_path_install():
     info(tr("这项设置只影响你自己的账户，之后随时可以取消。"))
     say()
     from .keys import read_key
-    print(f'  {tr("设置吗？输入 y 确认，直接回车跳过")} {C.GOLD}›{C.RESET} ',
-          end='', flush=True)
+    print(f'  {tr("设置吗？输入 y 确认，直接回车跳过")} {C.GOLD}›{C.RESET}')
     key = read_key()
-    print()
 
     settings.save(path_asked='1')      # 无论选什么都不再追问
     if key != 'y' and key != 'Y':

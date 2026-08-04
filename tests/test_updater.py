@@ -315,12 +315,70 @@ class UpdateCommand(unittest.TestCase):
                                   '/usr/bin/python3'):
             self.assertEqual(updater.update(yes=True), 1)
 
-    def test_brew_install_rejected(self):
-        exe = '/opt/homebrew/Cellar/kuraya/0.2.3/libexec/Kuraya/Kuraya'
+    def test_brew_delegates_to_brew_upgrade(self):
+        """brew 安装时委托 brew upgrade（保持 brew 状态一致），不自行替换"""
+        exe = '/opt/homebrew/Cellar/kuraya/0.3.0/libexec/Kuraya/Kuraya'
         with mock.patch.object(updater, 'FROZEN', True), \
                 mock.patch.object(updater.sys, 'platform', 'darwin'), \
-                mock.patch.object(updater.sys, 'executable', exe):
+                mock.patch.object(updater.sys, 'executable', exe), \
+                mock.patch.object(updater, '_run_brew_upgrade',
+                                  return_value=(True, '0.4.0', False)) as run:
+            self.assertEqual(updater.update(yes=True), 0)
+        run.assert_called_once()
+
+    def test_brew_quiet_reports_version(self):
+        exe = '/opt/homebrew/Cellar/kuraya/0.3.0/libexec/Kuraya/Kuraya'
+        with mock.patch.object(updater, 'FROZEN', True), \
+                mock.patch.object(updater.sys, 'platform', 'darwin'), \
+                mock.patch.object(updater.sys, 'executable', exe), \
+                mock.patch.object(updater, '_run_brew_upgrade',
+                                  return_value=(True, '0.4.0', False)):
+            self.assertEqual(updater.update(yes=True, quiet=True), 0)
+
+    def test_brew_failure_reported(self):
+        exe = '/opt/homebrew/Cellar/kuraya/0.3.0/libexec/Kuraya/Kuraya'
+        with mock.patch.object(updater, 'FROZEN', True), \
+                mock.patch.object(updater.sys, 'platform', 'darwin'), \
+                mock.patch.object(updater.sys, 'executable', exe), \
+                mock.patch.object(updater, '_run_brew_upgrade',
+                                  return_value=(False, '', False)):
             self.assertEqual(updater.update(yes=True), 1)
+
+    def test_brew_confirm_cancels(self):
+        """委托前确认，Esc/n 取消"""
+        exe = '/opt/homebrew/Cellar/kuraya/0.3.0/libexec/Kuraya/Kuraya'
+        with mock.patch.object(updater, 'FROZEN', True), \
+                mock.patch.object(updater.sys, 'platform', 'darwin'), \
+                mock.patch.object(updater.sys, 'executable', exe), \
+                mock.patch('kuraya.keys.read_key', return_value='esc'), \
+                mock.patch.object(updater, '_run_brew_upgrade') as run:
+            self.assertEqual(updater.update(), 0)
+        run.assert_not_called()
+
+    def test_run_brew_upgrade_success(self):
+        """升级成功：退出码 0 且输出无 up-to-date → 从 brew list 取新版本"""
+        with mock.patch.object(updater.subprocess, 'run') as run:
+            run.side_effect = [
+                mock.Mock(returncode=0, stdout='==> Upgrading kuraya\n',
+                          stderr=''),
+                mock.Mock(returncode=0, stdout='kuraya 0.4.0\n', stderr=''),
+            ]
+            self.assertEqual(updater._run_brew_upgrade(),
+                             (True, '0.4.0', False))
+
+    def test_run_brew_upgrade_already_latest(self):
+        with mock.patch.object(updater.subprocess, 'run') as run:
+            run.return_value = mock.Mock(
+                returncode=0, stdout='kuraya 0.4.0 already up-to-date\n',
+                stderr='')
+            self.assertEqual(updater._run_brew_upgrade(),
+                             (True, '', True))
+
+    def test_run_brew_upgrade_missing_brew(self):
+        with mock.patch.object(updater.subprocess, 'run',
+                               side_effect=FileNotFoundError):
+            self.assertEqual(updater._run_brew_upgrade(),
+                             (False, '', False))
 
     def test_quiet_output(self):
         new_dir = Path(tempfile.mkdtemp())

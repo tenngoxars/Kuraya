@@ -41,7 +41,7 @@ irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 | iex
 curl -fsSL https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.sh | bash
 ```
 
-**升级**：运行 `kuraya update` 自动检查并安装新版本（Homebrew 安装的用 `brew upgrade kuraya`）。
+**升级**：运行 `kuraya update` 自动检查并安装新版本（Homebrew 安装的会自动调用 `brew upgrade kuraya`）。
 
 也可以从 [Releases](https://github.com/tenngoxars/Kuraya/releases) 下载对应平台 zip **解压即用**（免安装）：Windows 双击 `Kuraya\Kuraya.exe`；macOS 双击 `Kuraya/Kuraya`（首次打开右键→打开）；Linux 运行 `Kuraya/Kuraya`。
 

@@ -13,6 +13,7 @@
 import os
 import platform
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -137,13 +138,9 @@ def update(yes=False, quiet=False):
     enable_ansi()
 
     if _brew_install():
-        if quiet:
-            print('updated=error')
-        else:
-            msg = tr('当前是 Homebrew 安装，请运行')
-            print(f'  {C.RED}✕{C.RESET} {msg} '
-                  f'{C.BOLD}brew upgrade kuraya{C.RESET}')
-        return 1
+        # brew 维护自己的版本记录（Cellar 目录、formula sha256），
+        # 直接替换文件会让 brew 状态错乱，委托 brew upgrade 保持一致
+        return _brew_update(yes=yes, quiet=quiet)
     if not FROZEN:
         if quiet:
             print('updated=error')
@@ -228,6 +225,74 @@ def _finish(message, quiet):
     else:
         from .launcher import C
         print(f'  {C.RED}✕{C.RESET} {message}')
+
+
+def _brew_update(yes=False, quiet=False):
+    """
+    Homebrew 安装的升级：委托 brew upgrade（保持 brew 状态一致）。
+    返回进程退出码。
+    """
+    from .launcher import C, enable_ansi
+    enable_ansi()
+
+    if not (yes or quiet):
+        from .keys import read_key
+        prompt = tr('将调用 brew upgrade kuraya（保持 Homebrew 状态一致），'
+                    '是否继续？[Y/n]')
+        print(f'  {prompt} {C.GOLD}›{C.RESET} ', end='', flush=True)
+        key = read_key()
+        print()
+        if key not in ('y', 'Y', 'enter', ''):
+            print(tr('  已取消'))
+            return 0
+
+    if not quiet:
+        print(f'  {C.GREY}{tr("检测到 Homebrew 安装，正在调用 brew upgrade kuraya……")}'
+              f'{C.RESET}')
+
+    ok, version, already = _run_brew_upgrade()
+    if quiet:
+        print(f'updated={version or ("none" if already else "error")}')
+        return 0 if ok else 1
+
+    if not ok:
+        fail_msg = tr('brew upgrade 执行失败，请手动运行该命令查看原因')
+        print(f'  {C.RED}✕{C.RESET} {fail_msg}')
+        return 1
+    if already:
+        from . import __version__
+        latest_msg = tr('已是最新版本 v{__version__}', __version__=__version__)
+        print(f'  {C.GREEN}✓{C.RESET} {latest_msg}')
+        return 0
+    done_msg = tr('已更新到 v{version}，重启 kuraya 后生效', version=version)
+    print(f'  {C.GREEN}✓{C.RESET} {done_msg}')
+    return 0
+
+
+def _run_brew_upgrade():
+    """
+    执行 brew upgrade kuraya。返回 (是否成功, 新版本号, 是否本就最新)。
+    新版本号从 brew list --versions 读取。
+    """
+    try:
+        result = subprocess.run(['brew', 'upgrade', 'kuraya'],
+                                capture_output=True, text=True)
+        output = (result.stdout or '') + (result.stderr or '')
+    except OSError as exc:
+        return False, '', False
+    if result.returncode != 0:
+        return False, '', False
+
+    already = 'up-to-date' in output
+    version = ''
+    if not already:
+        try:
+            listed = subprocess.run(['brew', 'list', '--versions', 'kuraya'],
+                                    capture_output=True, text=True)
+            version = listed.stdout.strip().split()[-1]
+        except (OSError, IndexError):
+            version = ''
+    return True, version, already
 
 
 def _brew_install():

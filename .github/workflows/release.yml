@@ -13,7 +13,8 @@
 #     注意：mac-x86_64 产物缺失时 update-tap 会失败（不会静默发旧哈希），
 #     此时需人工处理 tap 的 on_intel 块
 #
-# 注：macos-13 是 Intel runner；若 GitHub 下线该镜像，删掉对应 job 即可。
+# 注：macos-15 是 Intel（x86_64）runner；arm64 用 macos-latest（Apple Silicon）。
+# 若 GitHub 退役 Intel 镜像，删掉 build-mac-x86_64 job 并处理 tap 的 on_intel 块。
 
 name: release
 
@@ -44,7 +45,7 @@ jobs:
           path: dist/Kuraya-*-mac-arm64.zip
 
   build-mac-x86_64:
-    runs-on: macos-13
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -30,6 +30,8 @@
 brew install tenngoxars/tap/kuraya
 ```
 
+升级后第一次启动会比平时慢十几秒（macOS 校验新程序），之后恢复正常。
+
 **Windows**：
 
 ```

@@ -167,14 +167,14 @@ def update(yes=False, quiet=False):
         return 0
 
     if not (yes or quiet):
-        try:
-            prompt = tr('发现新版本 v{remote}（当前 v{__version__}），'
-                        '是否更新？[Y/n]',
-                        remote=remote, __version__=__version__)
-            answer = input(f'  {prompt} ').strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            return 1
-        if answer not in ('', 'y', 'yes'):
+        from .keys import read_key
+        prompt = tr('发现新版本 v{remote}（当前 v{__version__}），'
+                    '是否更新？[Y/n]',
+                    remote=remote, __version__=__version__)
+        print(f'  {prompt} {C.GOLD}›{C.RESET} ', end='', flush=True)
+        key = read_key()
+        print()
+        if key not in ('y', 'Y', 'enter', ''):
             print(tr('  已取消'))
             return 0
 

@@ -105,17 +105,20 @@ def draw(library, source):
 
 
 def pause():
-    try:
-        input(f'\n  {C.FAINT}{tr("按回车返回菜单")}{C.RESET}')
-    except (EOFError, KeyboardInterrupt):
-        pass
+    """回车或 Esc 返回菜单"""
+    from .keys import read_key
+    print(f'\n  {C.FAINT}{tr("按回车返回菜单")}{C.RESET} ', end='', flush=True)
+    read_key()
+    print()
 
 
-def ask(prompt=tr("请选择")):
-    try:
-        return input(f'  {prompt} {C.GOLD}›{C.RESET} ').strip()
-    except (EOFError, KeyboardInterrupt):
-        return '0'
+def ask(prompt=tr('请选择')):
+    """单键选择。Esc 返回 'esc'，由调用方决定含义"""
+    from .keys import read_key
+    print(f'  {prompt} {C.GOLD}›{C.RESET} ', end='', flush=True)
+    key = read_key()
+    print()
+    return key
 
 
 def open_library(library):
@@ -206,7 +209,7 @@ def settings_menu():
         say()
 
         choice = ask()
-        if choice == '0':
+        if choice in ('0', 'esc', 'eof'):
             return
         if choice == '1':
             edit_setting(tr("选择影片库目录"), 'library')
@@ -247,7 +250,8 @@ def run():
         draw(library, source)
         choice = ask()
 
-        if choice == '0':
+        # Esc 与管道 EOF 视为退出（EOF 是脚本/双击场景的默认收尾）
+        if choice in ('0', 'esc', 'eof'):
             return 0
         if choice == '1':
             say()

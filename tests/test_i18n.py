@@ -70,6 +70,20 @@ class DetectLang(unittest.TestCase):
                 self.assertEqual(self.detect({'LANG': code.upper() + '.UTF-8'}),
                                  ZH_TW)
 
+    def test_kkuraya_lang_overrides_system(self):
+        """KURAYA_LANG 环境变量优先于系统检测"""
+        for override, expected in (('zh-CN', ZH_CN), ('zh_TW', ZH_TW),
+                                   ('zh-HK', ZH_TW), ('en', EN),
+                                   ('en_US', EN)):
+            with self.subTest(override=override):
+                self.assertEqual(
+                    self.detect({'LANG': 'en_US.UTF-8',
+                                 'KURAYA_LANG': override}), expected)
+
+    def test_unknown_override_ignored(self):
+        self.assertEqual(self.detect({'LANG': 'zh_TW.UTF-8',
+                                      'KURAYA_LANG': 'fr'}), ZH_TW)
+
 
 class Translate(unittest.TestCase):
     """tr() 查表、回退与参数注入"""

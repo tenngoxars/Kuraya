@@ -22,7 +22,14 @@ _lang = None
 
 
 def detect_lang():
-    """按系统语言返回 zh-CN / zh-TW / en"""
+    """按系统语言返回 zh-CN / zh-TW / en。KURAYA_LANG 环境变量优先"""
+    override = os.environ.get('KURAYA_LANG', '').strip().lower()
+    if override in ('zh-cn', 'zh_cn', 'zh-hans', 'zh'):
+        return ZH_CN
+    if override in ('zh-tw', 'zh_tw', 'zh-hk', 'zh-hant'):
+        return ZH_TW
+    if override in ('en', 'en-us', 'en_us'):
+        return EN
     code = None
     if os.name == 'nt':
         try:

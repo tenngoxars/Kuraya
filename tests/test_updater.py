@@ -281,13 +281,17 @@ class UpdateCommand(unittest.TestCase):
             self.assertEqual(updater.update(yes=True), 1)
 
     def test_cancel_keeps_install(self):
-        with mock.patch.object(updater, 'latest',
-                               return_value='9.9.9'), \
-                self.frozen()[0], self.frozen()[1], \
-                mock.patch('builtins.input', return_value='n'), \
-                mock.patch.object(updater, '_download') as dl:
-            self.assertEqual(updater.update(), 0)
-        dl.assert_not_called()
+        """按 n 或 Esc 取消，不下载"""
+        for key in ('n', 'esc'):
+            with self.subTest(key=key):
+                with mock.patch.object(updater, 'latest',
+                                       return_value='9.9.9'), \
+                        self.frozen()[0], self.frozen()[1], \
+                        mock.patch('kuraya.keys.read_key',
+                                   return_value=key), \
+                        mock.patch.object(updater, '_download') as dl:
+                    self.assertEqual(updater.update(), 0)
+                dl.assert_not_called()
 
     def test_confirm_proceeds(self):
         new_dir = Path(tempfile.mkdtemp())
@@ -296,7 +300,7 @@ class UpdateCommand(unittest.TestCase):
         with mock.patch.object(updater, 'latest',
                                return_value='9.9.9'), \
                 self.frozen()[0], self.frozen()[1], \
-                mock.patch('builtins.input', return_value='y'), \
+                mock.patch('kuraya.keys.read_key', return_value='y'), \
                 mock.patch.object(updater, '_download',
                                   return_value=(new_dir, new_dir.parent)), \
                 mock.patch.object(updater, '_replace') as rep:

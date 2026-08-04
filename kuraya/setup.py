@@ -92,14 +92,14 @@ def offer_path_install():
     say()
     info(tr("这项设置只影响你自己的账户，之后随时可以取消。"))
     say()
-    try:
-        answer = input(f'  {tr("设置吗？输入 y 确认，直接回车跳过")} {C.GOLD}›{C.RESET} '
-                       ).strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        answer = ''
+    from .keys import read_key
+    print(f'  {tr("设置吗？输入 y 确认，直接回车跳过")} {C.GOLD}›{C.RESET} ',
+          end='', flush=True)
+    key = read_key()
+    print()
 
     settings.save(path_asked='1')      # 无论选什么都不再追问
-    if answer != 'y':
+    if key != 'y' and key != 'Y':
         say(f'    {C.GREY}{tr("已跳过。以后想设置，运行 kuraya install 即可")}{C.RESET}')
         say()
         return

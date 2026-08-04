@@ -36,7 +36,8 @@ curl -fsSL "$URL" -o "$TMP/kuraya.zip"
 
 echo "  安装到 $DEST"
 rm -rf "$DEST"
-mkdir -p "$BIN_DIR"
+# 程序目录与 shim 目录都要存在（旧版本或新机器上 ~/.local/opt 可能没有）
+mkdir -p "$BIN_DIR" "$(dirname "$DEST")"
 unzip -q "$TMP/kuraya.zip" -d "$TMP/x"
 mv "$TMP/x/Kuraya" "$DEST"
 # 壳 app 与程序目录同级放置，程序首次运行会自动装入 ~/Applications

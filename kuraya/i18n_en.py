@@ -159,6 +159,8 @@ TABLE = {
     '安装包结构不符，已放弃（现有安装未动）': 'Package structure mismatch — aborted (existing install untouched)',
     '替换程序目录失败：{exc}': 'Failed to replace the program directory: {exc}',
     '（Windows 上常见原因：有窗口停留在程序目录内，或安全软件正在扫描，关闭后重试）': ' (Windows: a window may be open inside the program folder, or security software is scanning — close them and retry)',
+    '（Windows 常见原因：有窗口停留在程序目录内，或安全软件正在扫描，关闭后重试）': ' (Windows: a window may be open inside the program folder, or security software is scanning — close them and retry)',
+    '（拒绝访问：多为安全软件拦截或目录权限问题，请将程序目录加入安全软件白名单，确认没有窗口停留在程序目录内后重试）': ' (Access denied: usually security software blocking self-update, or a folder permission issue — allowlist the program folder in your security software and make sure no window is open inside it, then retry)',
     '影片刮削与编目': 'Movie scraper & cataloger',
     '。不带参数运行则执行完整入库流程。': '. Running without arguments performs the full archiving flow.',
     '命令': 'command',

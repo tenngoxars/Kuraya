@@ -178,6 +178,9 @@ def update(yes=False, quiet=False):
             return 0
 
     try:
+        # Windows 上若程序自身的 CWD 在目标目录内，目录重命名会被拒绝
+        # （WinError 5），先切到临时目录消除自身占用
+        os.chdir(tempfile.gettempdir())
         new, tmp = _download(remote)
         target = Path(sys.executable).parent
         app_src = tmp / 'x' / 'Kuraya.app'
@@ -394,8 +397,15 @@ def _replace(new_dir, target):
             backup.rename(target)
             raise
     except OSError as exc:
-        hint = (tr('（Windows 上常见原因：有窗口停留在程序目录内，'
-                    '或安全软件正在扫描，关闭后重试）')
-                if os.name == 'nt' else '')
+        if os.name == 'nt':
+            if getattr(exc, 'winerror', None) == 5:
+                hint = tr('（拒绝访问：多为安全软件拦截或目录权限问题，'
+                          '请将程序目录加入安全软件白名单，'
+                          '确认没有窗口停留在程序目录内后重试）')
+            else:
+                hint = tr('（Windows 常见原因：有窗口停留在程序目录内，'
+                          '或安全软件正在扫描，关闭后重试）')
+        else:
+            hint = ''
         raise UpdateError(tr('替换程序目录失败：{exc}', exc=exc) + hint) from exc
     shutil.rmtree(backup, ignore_errors=True)

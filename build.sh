@@ -9,8 +9,11 @@ cd "$(dirname "$0")"
 TMP=""
 TMPA=""
 cleanup() {
+    # 两个目录都为空时 [ -n ] 会失败，set -e 下 trap 的失败会覆盖脚本退出码，
+    # 因此显式返回 0（Linux 构建不占临时目录，必须靠这一行）
     [ -n "$TMP" ] && rm -rf "$TMP"
     [ -n "$TMPA" ] && rm -rf "$TMPA"
+    return 0
 }
 trap cleanup EXIT
 

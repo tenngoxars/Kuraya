@@ -138,6 +138,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: mac-arm64
+          path: mac-arm64
       - name: 更新 formula 并推送
         if: env.TAP_TOKEN != ''
         env:

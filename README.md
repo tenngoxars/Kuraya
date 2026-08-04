@@ -22,7 +22,29 @@
 
 ## 安装
 
-命令行安装：
+## 安装
+
+两种方式任选：**免安装压缩包**（下载解压即用，无需安装），或**安装脚本/包管理器**（额外提供 `kuraya` 命令，可在任意终端调用）。
+
+### 免安装（下载解压即用）
+
+从 [Releases](https://github.com/tenngoxars/Kuraya/releases) 页面下载对应平台的压缩包，解压后直接运行：
+
+| 平台 | 压缩包 | 运行方式 |
+|---|---|---|
+| Windows | `Kuraya-<版本>-win-x64.zip` | 解压后双击 `Kuraya\Kuraya.exe` |
+| macOS（Apple Silicon） | `Kuraya-<版本>-mac-arm64.zip` | 解压后双击 `Kuraya/Kuraya` |
+| Linux | `Kuraya-<版本>-linux-x86_64.zip` | 解压后运行 `Kuraya/Kuraya` |
+
+**Windows 三步**：
+
+1. 下载 `Kuraya-<版本>-win-x64.zip`
+2. 右键 → **全部解压**
+3. 双击 `Kuraya\Kuraya.exe` 开始使用
+
+免安装版与安装版行为完全一致：配置存在用户目录（升级换新压缩包不会丢），首次运行按提示设置影片库即可。想升级时下载新版本压缩包，替换原目录即可。
+
+### 命令行安装（提供 kuraya 命令）
 
 **macOS**（仅 Apple Silicon）：
 
@@ -37,6 +59,8 @@ brew install tenngoxars/tap/kuraya
 ```
 irm https://raw.githubusercontent.com/tenngoxars/Kuraya/main/install.ps1 | iex
 ```
+
+安装到用户目录并把程序加入 PATH，之后可在任意终端输入 `kuraya` 启动；重复运行即升级。
 
 **Linux**：
 

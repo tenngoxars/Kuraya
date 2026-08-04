@@ -222,6 +222,10 @@ def update(yes=False, quiet=False):
                         print(f'  {C.GOLD}◈{C.RESET} {later_msg}')
                         print(f'  {C.GREY}{tr("请退出本程序，稍候片刻再重新打开")}'
                               f'{C.RESET}')
+                        fallback = tr('若重新打开后版本未变，请运行安装命令：'
+                                      'irm https://raw.githubusercontent.com/'
+                                      'tenngoxars/Kuraya/main/install.ps1 | iex')
+                        print(f'  {C.GREY}{fallback}{C.RESET}')
                     return 0
             if app_old is not None:
                 shutil.rmtree(app_target, ignore_errors=True)
@@ -404,6 +408,7 @@ def _replace_later(new_dir, target):
         return str(path).replace("'", "''")
 
     ps = f"""$ErrorActionPreference = 'Stop'
+$log = '{ps_str(tmp / 'update.log')}'
 Start-Sleep -Seconds 3
 $target = '{ps_str(target)}'
 $new = '{ps_str(new_dir)}'
@@ -413,6 +418,7 @@ try {{
   Rename-Item -LiteralPath $target -NewName 'Kuraya.old' -ErrorAction Stop
   Move-Item -LiteralPath $new -Destination $target -ErrorAction Stop
   Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
+  Set-Content -LiteralPath $log -Value 'OK' -Encoding UTF8
   Remove-Item -LiteralPath '{ps_str(tmp)}' -Recurse -Force -ErrorAction SilentlyContinue
 }} catch {{
   if (Test-Path -LiteralPath $old) {{
@@ -420,9 +426,15 @@ try {{
       Rename-Item -LiteralPath $old -NewName 'Kuraya' -ErrorAction SilentlyContinue
     }}
   }}
+  Set-Content -LiteralPath $log -Value ('FAIL: ' + $_.Exception.Message) -Encoding UTF8
 }}
 """
     script.write_text(ps, encoding='utf-8-sig')
+    log = tmp / 'update.log'
+    try:
+        log.write_text('PENDING', encoding='utf-8')
+    except OSError:
+        pass
     try:
         subprocess.Popen(
             ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',

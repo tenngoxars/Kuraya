@@ -14,27 +14,80 @@ DEST="${KURAYA_DIR:-$HOME/.local/opt/kuraya}"
 case "$(uname -s)" in
   Darwin) OS=mac ;;
   Linux) OS=linux ;;
-  *) echo "  不支持的平台: $(uname -s)"; exit 1 ;;
+  *) msg unsupported-platform "$(uname -s)"; exit 1 ;;
 esac
 case "$(uname -m)" in
   arm64 | aarch64) ARCH=arm64 ;;
   x86_64 | amd64) ARCH=x86_64 ;;
-  *) echo "  不支持的架构: $(uname -m)"; exit 1 ;;
+  *) msg unsupported-arch "$(uname -m)"; exit 1 ;;
 esac
 
-echo "  获取最新版本..."
+# 界面语言：跟随系统（简体中文 / 繁體中文 / English）。
+# mac 自带 bash 3.2 不支持关联数组，用 case 函数输出对应语言的消息
+MSG_LANG=zh_CN
+case "${LC_ALL:-${LANG:-}}" in
+  zh_CN*|zh_SG*|zh-Hans*) MSG_LANG=zh_CN ;;
+  zh_TW*|zh_HK*|zh_MO*|zh-Hant*) MSG_LANG=zh_TW ;;
+  *) MSG_LANG=en ;;
+esac
+
+msg() {
+  local key="$1"; shift
+  case "$key:$MSG_LANG" in
+    unsupported-platform:zh_CN) echo "  不支持的平台: $1";;
+    unsupported-platform:zh_TW) echo "  不支援的平台: $1";;
+    unsupported-platform:*) echo "  Unsupported platform: $1";;
+    unsupported-arch:zh_CN) echo "  不支持的架构: $1";;
+    unsupported-arch:zh_TW) echo "  不支援的架構: $1";;
+    unsupported-arch:*) echo "  Unsupported architecture: $1";;
+    fetching:zh_CN) echo "  获取最新版本...";;
+    fetching:zh_TW) echo "  取得最新版本...";;
+    fetching:*) echo "  Fetching latest version...";;
+    fetch-failed:zh_CN) echo "  获取版本失败, 请检查网络";;
+    fetch-failed:zh_TW) echo "  取得版本失敗，請檢查網路";;
+    fetch-failed:*) echo "  Failed to get the version — check your network";;
+    downloading:zh_CN) echo "  下载 $1";;
+    downloading:zh_TW) echo "  下載 $1";;
+    downloading:*) echo "  Downloading $1";;
+    installing:zh_CN) echo "  安装到 $1";;
+    installing:zh_TW) echo "  安裝到 $1";;
+    installing:*) echo "  Installing to $1";;
+    protocol-registered:zh_CN) echo "  已注册 kuraya: 协议, 片库页面可点击封面播放";;
+    protocol-registered:zh_TW) echo "  已註冊 kuraya: 協定，片庫頁面可點擊封面播放";;
+    protocol-registered:*) echo "  Registered the kuraya: protocol — click covers to play";;
+    path-write:zh_CN) echo "  已把 $1 写入 $2";;
+    path-write:zh_TW) echo "  已把 $1 寫入 $2";;
+    path-write:*) echo "  Wrote $1 to $2";;
+    rc-not-found:zh_CN) echo "  未找到 shell 配置文件，请手动把 $1 加入 PATH";;
+    rc-not-found:zh_TW) echo "  找不到 shell 設定檔，請手動把 $1 加入 PATH";;
+    rc-not-found:*) echo "  No shell config found — add $1 to PATH manually";;
+    path-hint:zh_CN) echo "  把 $1 加入 PATH 后即可使用 kuraya 命令:";;
+    path-hint:zh_TW) echo "  把 $1 加入 PATH 後即可使用 kuraya 指令:";;
+    path-hint:*) echo "  Add $1 to your PATH to use the kuraya command:";;
+    path-rc:zh_CN) echo "  (可把上面这行加进 ~/.bashrc 或 ~/.zshrc 永久生效；";;
+    path-rc:zh_TW) echo "  (可把上面這行加進 ~/.bashrc 或 ~/.zshrc 永久生效；";;
+    path-rc:*) echo "  (Add that line to ~/.bashrc or ~/.zshrc to keep it;";;
+    path-rc2:zh_CN) echo "   或用 KURAYA_UPDATE_RC=1 重装脚本自动写入)";;
+    path-rc2:zh_TW) echo "   或用 KURAYA_UPDATE_RC=1 重裝腳本自動寫入)";;
+    path-rc2:*) echo "   or rerun with KURAYA_UPDATE_RC=1 to write it automatically)";;
+    done-msg:zh_CN) echo "  完成! 运行 kuraya --version 验证。";;
+    done-msg:zh_TW) echo "  完成！執行 kuraya --version 驗證。";;
+    done-msg:*) echo "  Done! Run kuraya --version to verify.";;
+  esac
+}
+msg fetching
 VER=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
     | sed -n 's/.*"tag_name": "\([^"]*\)".*/\1/p')
-[ -n "$VER" ] || { echo "  获取版本失败, 请检查网络"; exit 1; }
+[ -n "$VER" ] || { msg fetch-failed; exit 1; }
 
 URL="https://github.com/$REPO/releases/download/$VER/Kuraya-${VER#v}-${OS}-${ARCH}.zip"
-echo "  下载 $URL"
+msg downloading "$URL"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 curl -fsSL "$URL" -o "$TMP/kuraya.zip"
 
-echo "  安装到 $DEST"
+msg installing "$DEST"
 rm -rf "$DEST"
 # 程序目录与 shim 目录都要存在（旧版本或新机器上 ~/.local/opt 可能没有）
 mkdir -p "$BIN_DIR" "$(dirname "$DEST")"
@@ -65,7 +118,7 @@ MimeType=x-scheme-handler/kuraya
 NoDisplay=true
 EOF
     xdg-mime default kuraya-handler.desktop x-scheme-handler/kuraya 2>/dev/null || true
-    echo "  已注册 kuraya: 协议, 片库页面可点击封面播放"
+    msg protocol-registered
 fi
 
 case ":$PATH:" in
@@ -79,16 +132,16 @@ case ":$PATH:" in
       esac
       if [ -n "$RC" ] && [ -f "$RC" ]; then
         printf '\nexport PATH="%s:$PATH"\n' "$BIN_DIR" >> "$RC"
-        echo "  已把 $BIN_DIR 写入 $RC"
+        msg path-write "$BIN_DIR" "$RC"
       else
-        echo "  未找到 shell 配置文件，请手动把 $BIN_DIR 加入 PATH"
+        msg rc-not-found "$BIN_DIR"
       fi
     else
-      echo "  把 $BIN_DIR 加入 PATH 后即可使用 kuraya 命令:"
+      msg path-hint "$BIN_DIR"
       echo "    export PATH=\"$BIN_DIR:\$PATH\""
-      echo "  (可把上面这行加进 ~/.bashrc 或 ~/.zshrc 永久生效；"
-      echo "   或用 KURAYA_UPDATE_RC=1 重装脚本自动写入)"
+      msg path-rc
+      msg path-rc2
     fi
     ;;
 esac
-echo "  完成! 运行 kuraya --version 验证。"
+msg done-msg

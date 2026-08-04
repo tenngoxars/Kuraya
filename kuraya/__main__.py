@@ -175,8 +175,8 @@ def do_uninstall():
                   f'{tr("删除程序目录失败：{exc}", exc=exc)}')
         for app in (target.parent / 'Kuraya.app',
                     Path.home() / 'Applications' / 'Kuraya.app'):
-            if app.exists():
-                shutil.rmtree(app, ignore_errors=True)
+            # ignore_errors=True 已容忍路径不存在，无需先 exists() 判断
+            shutil.rmtree(app, ignore_errors=True)
 
     config_msg = tr('配置保留在 {path}，如需彻底清理请删除该目录',
                     path=settings.APP_DIR)

@@ -135,11 +135,14 @@ spin = Spinner()
 
 
 def say(text=''):
-    """输出正式内容，先擦掉动画行避免残留。精简模式下不输出装饰内容"""
+    """输出正式内容。有动画行在跑时先擦掉它，否则直接输出。
+    菜单等静态绘制不带 \\r 前缀——无谓的回车会被终端（尤其 Warp）
+    当成输出块边界，方向键导航会被终端拦截"""
     if QUIET:
         return
     with spin.lock:
-        sys.stdout.write('\r\033[K')
+        if spin.active and spin.text:
+            sys.stdout.write('\r\033[K')
         print(text)
 
 

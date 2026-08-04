@@ -50,8 +50,15 @@ class ReadKeyPosix(unittest.TestCase):
         self.assertEqual(self.key(b'\x1b'), 'esc')
 
     def test_arrow_sequence_not_esc(self):
-        """方向键是 \x1b[A，整个序列被吃掉，不能误判成 Esc"""
-        self.assertEqual(self.key(b'\x1b', b'[A'), '?')
+        """方向键是 \x1b[A 等转义序列，识别为 up/down 而非 Esc"""
+        self.assertEqual(self.key(b'\x1b', b'[A'), 'up')
+        self.assertEqual(self.key(b'\x1b', b'[B'), 'down')
+        self.assertEqual(self.key(b'\x1b', b'[C'), 'right')
+        self.assertEqual(self.key(b'\x1b', b'[D'), 'left')
+
+    def test_unknown_sequence(self):
+        """F1 等未识别的转义序列返回 '?'，不影响后续按键"""
+        self.assertEqual(self.key(b'\x1b', b'OP'), '?')
 
     def test_eof(self):
         self.assertEqual(self.key(b''), 'eof')
@@ -96,8 +103,10 @@ class ReadKeyWindows(unittest.TestCase):
         self.assertEqual(self.key(b'\r'), 'enter')
 
     def test_function_key_prefix_skipped(self):
-        """功能键是两个字节，前缀字节后取第二字节丢弃"""
-        self.assertEqual(self.key(b'\xe0', b'H', b'x'), 'x')
+        """功能键第二字节决定键名：方向键 / 未识别的返回 '?'"""
+        self.assertEqual(self.key(b'\xe0', b'H'), 'up')
+        self.assertEqual(self.key(b'\xe0', b'P'), 'down')
+        self.assertEqual(self.key(b'\xe0', b'X'), '?')
 
     def test_ctrl_c_raises(self):
         with self.assertRaises(KeyboardInterrupt):

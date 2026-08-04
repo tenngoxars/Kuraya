@@ -67,58 +67,61 @@ def shorten(path, room):
     return f'{head}…{tail}'
 
 
-def entry(key, name, desc):
-    say(f'    {C.GOLD}{key}{C.RESET}  {C.BOLD}{name}{C.RESET}'
-        f'{" " * max(2, 14 - dw(name))}{C.FAINT}{desc}{C.RESET}')
+def menu_loop(draw_header, options, selected=0):
+    """
+    方向键导航 + 回车确认的选择器。options: [(key, label, desc)]。
+    返回选中项的 key；Esc / EOF 返回 None。数字键仍是快捷方式。
+    """
+    from .keys import read_key
+    while True:
+        clear_screen()
+        say()
+        brand()
+        say()
+        draw_header()
+        say()
+        rule()
+        say()
+        for i, (key, label, desc) in enumerate(options):
+            if i == selected:
+                say(f'  {C.GOLD}▸{C.RESET} {C.GOLD}{key}{C.RESET}  '
+                    f'{C.BOLD}{label}{C.RESET}'
+                    f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}')
+            else:
+                say(f'  {C.GREY}·{C.RESET} {C.GOLD}{key}{C.RESET}  {label}'
+                    f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}')
+        say()
+        hint = tr('↑↓ 选择 · 回车 确认 · Esc 返回')
+        print(f'  {C.FAINT}{hint}{C.RESET} ', end='', flush=True)
+        key = read_key()
+        print()
+        if key == 'up':
+            selected = (selected - 1) % len(options)
+        elif key == 'down':
+            selected = (selected + 1) % len(options)
+        elif key in ('enter', ''):
+            return options[selected][0]
+        elif key in ('esc', 'eof'):
+            return None
+        elif key.isdigit():
+            for k, _, _ in options:
+                if k == key:
+                    return k
 
 
-def draw(library, source):
-    """绘制菜单主体，同时显示当前状态"""
-    clear_screen()
-    say()
-    brand()
-    say()
-
+def draw_header(library, source):
+    """主菜单头部：库状态 + 更新提示"""
     total = count_library(library)
     pending = count_pending(source)
-    status_line('影片库', str(library),
-                f'{total} 部' if total is not None else '尚未生成页面')
-    status_line('待整理', str(source),
-                f'{pending} 个文件' if pending else '空')
-    say()
-    rule()
-    say()
-
+    status_line(tr('影片库'), str(library),
+                f'{total} {tr("部")}' if total is not None else tr('尚未生成页面'))
+    status_line(tr('待整理'), str(source),
+                f'{pending} {tr("个文件")}' if pending else tr('空'))
     # 有新版本时每轮都提示，直到升级
     notice = updater.text()
     if notice:
-        say(notice)
         say()
-
-    entry('1', tr("刮削入库"), tr("处理待整理目录并归入片库"))
-    entry('2', tr("重建页面"), tr("重新扫描片库并生成 index.html"))
-    entry('3', tr("打开片库"), tr("在浏览器中查看"))
-    entry('4', tr("设置"), tr("影片库位置、待整理目录、播放器"))
-    entry('5', tr("更新"), tr("检查并安装新版本"))
-    entry('0', tr("退出"), '')
-    say()
-
-
-def pause():
-    """回车或 Esc 返回菜单"""
-    from .keys import read_key
-    print(f'\n  {C.FAINT}{tr("按回车返回菜单")}{C.RESET} ', end='', flush=True)
-    read_key()
-    print()
-
-
-def ask(prompt=tr('请选择')):
-    """单键选择。Esc 返回 'esc'，由调用方决定含义"""
-    from .keys import read_key
-    print(f'  {prompt} {C.GOLD}›{C.RESET} ', end='', flush=True)
-    key = read_key()
-    print()
-    return key
+        say(notice)
 
 
 def open_library(library):
@@ -193,37 +196,38 @@ def language_label(code):
             'zh-TW': '繁體中文', 'en': 'English'}.get(code, '')
 
 
+def pause():
+    """回车或 Esc 返回菜单"""
+    from .keys import read_key
+    print(f'\n  {C.FAINT}{tr("按回车返回菜单")}{C.RESET} ', end='', flush=True)
+    read_key()
+    print()
+
+
 def language_menu():
     """选择界面语言：写入配置并立即生效（无需重启）"""
     from . import i18n
-    options = [('', tr('跟随系统')), ('zh-CN', '简体中文'),
-               ('zh-TW', '繁體中文'), ('en', 'English')]
+    lang_options = [
+        ('1', tr('跟随系统'), ''),
+        ('2', '简体中文', ''),
+        ('3', '繁體中文', ''),
+        ('4', 'English', ''),
+    ]
     while True:
         cfg = settings.load()
-        clear_screen()
-        say()
-        brand()
-        say()
-        say(f'  {C.BOLD}{tr("语言")}{C.RESET}')
-        say()
-        status_line(tr('当前'), language_label(cfg['language']))
-        say()
-        rule()
-        say()
-        for i, (code, label) in enumerate(options, 1):
-            entry(str(i), label, tr('当前') if code == cfg['language'] else '')
-        entry('0', tr('返回'), '')
-        say()
 
-        choice = ask()
-        if choice in ('0', 'esc', 'eof'):
+        def header():
+            say(f'  {C.BOLD}{tr("语言")}{C.RESET}')
+            say()
+            status_line(tr('当前'), language_label(cfg['language']))
+            say()
+
+        choice = menu_loop(header, lang_options + [('0', tr('返回'), '')])
+        if choice is None or choice == '0':
             return
-        if not choice.isdigit():
+        code = {'1': '', '2': 'zh-CN', '3': 'zh-TW', '4': 'en'}.get(choice)
+        if code is None:
             continue
-        index = int(choice)
-        if not 1 <= index <= len(options):
-            continue
-        code = options[index - 1][0]
         settings.save(language=code)
         i18n.refresh()
         say(f'    {C.GREEN}✓{C.RESET} {tr("已保存")}')
@@ -233,27 +237,24 @@ def language_menu():
 def settings_menu():
     while True:
         cfg = settings.load()
-        clear_screen()
-        say()
-        brand()
-        say()
-        say(f'  {C.BOLD}{tr("设置")}{C.RESET}')
-        say()
-        status_line(tr("影片库"), cfg['library'] or tr("(未设置)"))
-        status_line(tr("待整理"), cfg['source'] or tr("(默认为影片库下的「待整理」)"))
-        status_line(tr("播放器"), cfg['player'] or tr("(使用系统默认程序)"))
-        say()
-        rule()
-        say()
-        entry('1', tr('影片库'), tr('整理好的影片存放位置'))
-        entry('2', tr('待整理'), tr('新下载的影片放这里'))
-        entry('3', tr('播放器'), tr('留空则用系统默认程序'))
-        entry('4', tr('语言'), tr('界面语言'))
-        entry('0', tr('返回'), '')
-        say()
 
-        choice = ask()
-        if choice in ('0', 'esc', 'eof'):
+        def header():
+            say(f'  {C.BOLD}{tr("设置")}{C.RESET}')
+            say()
+            status_line(tr("影片库"), cfg['library'] or tr("(未设置)"))
+            status_line(tr("待整理"), cfg['source'] or tr("(默认为影片库下的「待整理」)"))
+            status_line(tr("播放器"), cfg['player'] or tr("(使用系统默认程序)"))
+            say()
+
+        options = [
+            ('1', tr('影片库'), tr('整理好的影片存放位置')),
+            ('2', tr('待整理'), tr('新下载的影片放这里')),
+            ('3', tr('播放器'), tr('留空则用系统默认程序')),
+            ('4', tr('语言'), tr('界面语言')),
+            ('0', tr('返回'), ''),
+        ]
+        choice = menu_loop(header, options)
+        if choice is None or choice == '0':
             return
         if choice == '1':
             edit_setting(tr('选择影片库目录'), 'library')
@@ -263,8 +264,6 @@ def settings_menu():
             edit_setting(tr('选择播放器程序'), 'player', kind='file')
         elif choice == '4':
             language_menu()
-        else:
-            continue
         pause()
 
 
@@ -293,11 +292,18 @@ def run():
             settings_menu()
             continue
 
-        draw(library, source)
-        choice = ask()
+        options = [
+            ('1', tr("刮削入库"), tr("处理待整理目录并归入片库")),
+            ('2', tr("重建页面"), tr("重新扫描片库并生成 index.html")),
+            ('3', tr("打开片库"), tr("在浏览器中查看")),
+            ('4', tr("设置"), tr("影片库位置、待整理目录、播放器")),
+            ('5', tr("更新"), tr("检查并安装新版本")),
+            ('0', tr("退出"), ''),
+        ]
+        choice = menu_loop(lambda: draw_header(library, source), options)
 
         # Esc 与管道 EOF 视为退出（EOF 是脚本/双击场景的默认收尾）
-        if choice in ('0', 'esc', 'eof'):
+        if choice is None or choice == '0':
             return 0
         if choice == '1':
             say()

@@ -26,9 +26,10 @@ def _read_key_win():
     import msvcrt
     while True:
         ch = msvcrt.getch()
-        if ch in (b'\x00', b'\xe0'):      # 功能键前缀，丢掉第二个字节
-            msvcrt.getch()
-            continue
+        if ch in (b'\x00', b'\xe0'):      # 功能键前缀，第二字节才是键名
+            fn = msvcrt.getch()
+            return {b'H': 'up', b'P': 'down', b'M': 'right',
+                    b'K': 'left'}.get(fn, '?')
         if ch == b'\x1b':
             return 'esc'
         if ch in (b'\r', b'\n'):
@@ -78,7 +79,10 @@ def _read_key_posix():
                 rest += os.read(fd, 16)
         except OSError:
             rest = b''
-        return '?' if rest else 'esc'
+        if not rest:
+            return 'esc'
+        return {b'[A': 'up', b'[B': 'down', b'[C': 'right',
+                b'[D': 'left'}.get(rest, '?')
     if ch in (b'\r', b'\n'):
         return 'enter'
     if ch == b'\x03':

@@ -230,8 +230,7 @@ def language_menu():
             continue
         settings.save(language=code)
         i18n.refresh()
-        say(f'    {C.GREEN}✓{C.RESET} {tr("已保存")}')
-        pause()
+        # 头部实时显示当前语言，无需暂停确认，Esc 随时可返回设置
 
 
 def settings_menu():

@@ -33,14 +33,16 @@
 | 平台 | 压缩包 | 运行方式 |
 |---|---|---|
 | Windows | `Kuraya-<版本>-win-x64.zip` | 解压后双击 `Kuraya\Kuraya.exe` |
-| macOS（Apple Silicon） | `Kuraya-<版本>-mac-arm64.zip` | 解压后双击 `Kuraya/Kuraya` |
-| Linux | `Kuraya-<版本>-linux-x86_64.zip` | 解压后运行 `Kuraya/Kuraya` |
+| macOS（Apple Silicon） | `Kuraya-<版本>-mac-arm64.zip` | 解压后双击 `Kuraya/Kuraya`，或在终端运行 |
+| Linux | `Kuraya-<版本>-linux-x86_64.zip` | 解压后在终端运行 `Kuraya/Kuraya` |
 
 **Windows 三步**：
 
 1. 下载 `Kuraya-<版本>-win-x64.zip`
 2. 右键 → **全部解压**
 3. 双击 `Kuraya\Kuraya.exe` 开始使用
+
+> 说明：macOS 下载版首次打开可能被系统拦截（未签名应用提示），右键点击 `Kuraya` → **打开** 即可，之后正常；Windows 首次运行如出现 SmartScreen 提示，点「仍要运行」。Linux 桌面环境如需双击，把 `Kuraya` 设为可执行文件（解压后通常已是）并在文件管理器里允许运行。
 
 免安装版与安装版行为完全一致：配置存在用户目录（升级换新压缩包不会丢），首次运行按提示设置影片库即可。想升级时下载新版本压缩包，替换原目录即可。
 

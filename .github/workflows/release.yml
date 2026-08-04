@@ -100,8 +100,8 @@ jobs:
             echo ""
             echo "免安装（下载解压即用）："
             echo "- Windows：下载 \`Kuraya-${VER}-win-x64.zip\`，解压后双击 \`Kuraya\\Kuraya.exe\`"
-            echo "- macOS：下载 \`Kuraya-${VER}-mac-arm64.zip\`，解压后双击 \`Kuraya/Kuraya\`"
-            echo "- Linux：下载 \`Kuraya-${VER}-linux-x86_64.zip\`，解压后运行 \`Kuraya/Kuraya\`"
+            echo "- macOS：下载 \`Kuraya-${VER}-mac-arm64.zip\`，解压后双击 \`Kuraya/Kuraya\`（首次打开如被拦截，右键→打开）"
+            echo "- Linux：下载 \`Kuraya-${VER}-linux-x86_64.zip\`，解压后在终端运行 \`Kuraya/Kuraya\`"
             echo ""
             echo "命令行安装（macOS）："
             echo '```bash'

@@ -28,6 +28,8 @@ TABLE = {
     '选择待整理目录': 'Choose the pending folder',
     '选择播放器程序': 'Choose the player program',
     '请选择「设置」重新指定影片库位置': 'Choose "Settings" to point at the library again',
+    '安全软件拦截了直接替换，已安排程序退出后自动完成更新': 'Security software blocked the direct replacement — the update will finish after the program exits',
+    '请退出本程序，稍候片刻再重新打开': 'Exit the program and reopen it after a moment',
     '页面尚未生成，请先执行「重建页面」': 'Page not generated yet — run "Rebuild page" first',
     '已在浏览器中打开': 'Opened in browser',
     '打开失败：{exc}': 'Failed to open: {exc}',

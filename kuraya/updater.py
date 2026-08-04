@@ -43,6 +43,10 @@ _shown = False  # 同一进程只在主流程开头提示一次
 class UpdateError(Exception):
     """更新失败。报错但不动现有安装"""
 
+    def __init__(self, message, winerror=None):
+        super().__init__(message)
+        self.winerror = winerror
+
 
 def is_newer(remote, current):
     """
@@ -203,7 +207,22 @@ def update(yes=False, quiet=False):
         # 再换主目录；失败时回滚已就位的 app
         try:
             _replace(new, target)
-        except UpdateError:
+        except UpdateError as exc:
+            if sys.platform == 'win32' and getattr(exc, 'winerror', None) == 5:
+                # 安全软件拦截程序自修改：安排独立进程在程序退出后替换
+                if _replace_later(new, target):
+                    if app_old is not None:
+                        shutil.rmtree(app_target, ignore_errors=True)
+                        app_old.rename(app_target)
+                    if quiet:
+                        print(f'updated={remote}')
+                    else:
+                        later_msg = tr('安全软件拦截了直接替换，'
+                                       '已安排程序退出后自动完成更新')
+                        print(f'  {C.GOLD}◈{C.RESET} {later_msg}')
+                        print(f'  {C.GREY}{tr("请退出本程序，稍候片刻再重新打开")}'
+                              f'{C.RESET}')
+                    return 0
             if app_old is not None:
                 shutil.rmtree(app_target, ignore_errors=True)
                 app_old.rename(app_target)
@@ -316,7 +335,7 @@ def _asset_url(version):
             raise UpdateError(tr("官方包仅支持 Apple Silicon（GitHub 已无 "
                                  'Intel 构建机），请改用 brew 安装'))
         os_arch = 'mac-arm64'
-    elif os.name == 'nt':
+    elif sys.platform == 'win32':
         os_arch = 'win-x64'
     else:
         if machine not in ('x86_64', 'amd64'):
@@ -360,7 +379,7 @@ def _download(version):
                              kind=type(exc).__name__)) from exc
 
     new = tmp / 'x' / 'Kuraya'
-    exe = 'Kuraya.exe' if os.name == 'nt' else 'Kuraya'
+    exe = 'Kuraya.exe' if sys.platform == 'win32' else 'Kuraya'
     if not new.is_dir() or not (new / exe).is_file():
         raise UpdateError(tr("安装包结构不符，已放弃（现有安装未动）"))
     if os.name != 'nt':
@@ -370,6 +389,47 @@ def _download(version):
         if not mode & 0o111:
             exe_path.chmod(mode | 0o111)
     return new, tmp
+
+
+def _replace_later(new_dir, target):
+    """
+    延迟替换：安全软件拦截程序自修改时，写一个独立 PowerShell 脚本，
+    由它在程序退出后完成替换（独立进程通常不被行为检测拦截）。
+    返回是否已安排。临时目录保留给脚本使用，脚本完成后自行清理。
+    """
+    tmp = new_dir.parent.parent
+    script = tmp / 'replace.ps1'
+
+    def ps_str(path):
+        return str(path).replace("'", "''")
+
+    ps = f"""$ErrorActionPreference = 'Stop'
+Start-Sleep -Seconds 3
+$target = '{ps_str(target)}'
+$new = '{ps_str(new_dir)}'
+$old = "$target.old"
+try {{
+  if (Test-Path -LiteralPath $old) {{ Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue }}
+  Rename-Item -LiteralPath $target -NewName 'Kuraya.old' -ErrorAction Stop
+  Move-Item -LiteralPath $new -Destination $target -ErrorAction Stop
+  Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath '{ps_str(tmp)}' -Recurse -Force -ErrorAction SilentlyContinue
+}} catch {{
+  if (Test-Path -LiteralPath $old) {{
+    if (-not (Test-Path -LiteralPath $target)) {{
+      Rename-Item -LiteralPath $old -NewName 'Kuraya' -ErrorAction SilentlyContinue
+    }}
+  }}
+}}
+"""
+    script.write_text(ps, encoding='utf-8-sig')
+    try:
+        subprocess.Popen(
+            ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+             '-WindowStyle', 'Hidden', '-File', str(script)])
+        return True
+    except OSError:
+        return False
 
 
 def _replace(new_dir, target):
@@ -397,7 +457,7 @@ def _replace(new_dir, target):
             backup.rename(target)
             raise
     except OSError as exc:
-        if os.name == 'nt':
+        if sys.platform == 'win32':
             if getattr(exc, 'winerror', None) == 5:
                 hint = tr('（拒绝访问：多为安全软件拦截或目录权限问题，'
                           '请将程序目录加入安全软件白名单，'
@@ -407,5 +467,6 @@ def _replace(new_dir, target):
                           '或安全软件正在扫描，关闭后重试）')
         else:
             hint = ''
-        raise UpdateError(tr('替换程序目录失败：{exc}', exc=exc) + hint) from exc
+        raise UpdateError(tr('替换程序目录失败：{exc}', exc=exc) + hint,
+                          winerror=getattr(exc, 'winerror', None)) from exc
     shutil.rmtree(backup, ignore_errors=True)

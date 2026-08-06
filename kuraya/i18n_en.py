@@ -149,7 +149,7 @@ TABLE = {
     '（当前 v{__version__}）': ' (current v{__version__})',
     '更新：菜单选「更新」，或运行': 'Update: pick "Update" in the menu, or run',
     '详情：': 'Details: ',
-    '将调用 brew upgrade kuraya（保持 Homebrew 状态一致），是否继续？[Y/n]': 'Will run brew upgrade kuraya (keeps Homebrew state consistent). Continue? [Y/n]',
+    '将调用 brew 更新 kuraya（先刷新索引再升级），是否继续？[Y/n]': 'Will refresh the brew index and upgrade kuraya. Continue? [Y/n]',
     '检测到 Homebrew 安装，正在调用 brew upgrade kuraya……': 'Homebrew install detected — running brew upgrade kuraya…',
     'brew upgrade 执行失败，请手动运行该命令查看原因': 'brew upgrade failed — run it manually to see why',
     '源码或 pip 安装无法自更新。': 'Source or pip installs cannot self-update.',

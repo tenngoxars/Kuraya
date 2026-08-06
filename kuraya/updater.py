@@ -32,8 +32,9 @@ RELEASES_URL = f'https://github.com/{REPO}/releases/latest'
 
 HEADERS = {'Accept': 'application/vnd.github+json'}
 
-# 检查间隔：一天一次
+# 检查间隔：一天一次；失败缓存只顶 1 小时，避免网络恢复后长时间不提示
 CHECK_INTERVAL = 24 * 3600
+FAIL_INTERVAL = 3600
 TIMEOUT = (3, 5)          # 更新提示不值得让人等，超时从严
 DOWNLOAD_TIMEOUT = (10, 60)  # 安装包下载放宽
 
@@ -91,7 +92,13 @@ def latest(force=False):
     except (requests.RequestException, ValueError):
         pass
     version = tag.strip().lstrip('vV') if isinstance(tag, str) else ''
-    settings.save_update_state(str(int(time.time())), version)
+    if version:
+        settings.save_update_state(str(int(time.time())), version)
+    else:
+        # 失败也写缓存，但把 checked 倒拨到只剩 1 小时有效期：
+        # 离线时避免每次启动都等超时，网络恢复后不至于一整天不提示
+        settings.save_update_state(
+            str(int(time.time()) - CHECK_INTERVAL + FAIL_INTERVAL), '')
     return version or None
 
 
@@ -270,7 +277,7 @@ def _brew_update(yes=False, quiet=False):
     enable_ansi()
 
     if not (yes or quiet):
-        prompt = tr('将调用 brew upgrade kuraya（保持 Homebrew 状态一致），'
+        prompt = tr('将调用 brew 更新 kuraya（先刷新索引再升级），'
                     '是否继续？[Y/n]')
         try:
             answer = input(f'  {prompt} {C.GOLD}›{C.RESET} ').strip().lower()
@@ -307,26 +314,46 @@ def _run_brew_upgrade():
     """
     执行 brew upgrade kuraya。返回 (是否成功, 新版本号, 是否本就最新)。
     新版本号从 brew list --versions 读取。
+    brew 不自动刷新 tap 索引，本地 formula 可能停在旧版导致
+    「已是最新」误报，遇到 up-to-date 先 brew update 再重试一次。
     """
-    try:
-        result = subprocess.run(['brew', 'upgrade', 'kuraya'],
-                                capture_output=True, text=True)
-        output = (result.stdout or '') + (result.stderr or '')
-    except OSError as exc:
+
+    def upgrade():
+        try:
+            return subprocess.run(['brew', 'upgrade', 'kuraya'],
+                                  capture_output=True, text=True)
+        except OSError:
+            return None
+
+    result = upgrade()
+    if result is None:
         return False, '', False
-    if result.returncode != 0:
+    output = (result.stdout or '') + (result.stderr or '')
+    if result.returncode == 0 and 'up-to-date' in output:
+        try:
+            subprocess.run(['brew', 'update'], capture_output=True,
+                           text=True, timeout=600)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        result = upgrade()
+        if result is None:
+            return False, '', False
+        output = (result.stdout or '') + (result.stderr or '')
+        if result.returncode != 0:
+            return False, '', False
+        if 'up-to-date' in output:
+            return True, '', True
+    elif result.returncode != 0:
         return False, '', False
 
-    already = 'up-to-date' in output
     version = ''
-    if not already:
-        try:
-            listed = subprocess.run(['brew', 'list', '--versions', 'kuraya'],
-                                    capture_output=True, text=True)
-            version = listed.stdout.strip().split()[-1]
-        except (OSError, IndexError):
-            version = ''
-    return True, version, already
+    try:
+        listed = subprocess.run(['brew', 'list', '--versions', 'kuraya'],
+                                capture_output=True, text=True)
+        version = listed.stdout.strip().split()[-1]
+    except (OSError, IndexError):
+        version = ''
+    return True, version, False
 
 
 def _brew_install():

@@ -129,6 +129,22 @@ class Latest(unittest.TestCase):
         self.addCleanup(mock.patch.stopall)
         self.assertEqual(updater.latest(force=True), '9.9.9')
 
+    def test_failure_cache_expires_after_an_hour(self):
+        """失败缓存只顶 1 小时：离线不反复等超时，网络恢复后很快重新检查"""
+        yesterday = str(int(time.time()) - 2 * 24 * 3600)
+        settings.save_update_state(yesterday, '')
+        mock.patch.object(updater.requests, 'get',
+                          self.fake_get(exc=updater.requests.
+                                        RequestException('boom'))).start()
+        self.addCleanup(mock.patch.stopall)
+        self.assertIsNone(updater.latest())
+        state = settings.update_state()
+        # checked 被倒拨：实际只剩余 1 小时有效期，而不是一整天
+        self.assertLessEqual(float(state['checked']),
+                             int(time.time()) - updater.CHECK_INTERVAL
+                             + updater.FAIL_INTERVAL + 5)
+        self.assertEqual(state['latest'], '')
+
 
 class AssetUrl(unittest.TestCase):
     """安装包地址按平台与架构选择，发行版没有的组合直接报错"""
@@ -575,6 +591,55 @@ class Show(unittest.TestCase):
         with mock.patch('kuraya.launcher.say') as say:
             updater.show()
         say.assert_not_called()
+
+
+class BrewUpgrade(unittest.TestCase):
+    """brew 分支：索引过期时先刷新再重试，避免「已是最新」误报"""
+
+    def run_upgrade(self, outcomes):
+        with mock.patch.object(updater.subprocess, 'run',
+                               side_effect=outcomes) as run:
+            result = updater._run_brew_upgrade()
+        return result, run
+
+    def test_up_to_date_triggers_index_refresh(self):
+        """up-to-date 后 brew update 再重试，第二次有新版本则升级"""
+        outcomes = [
+            mock.Mock(returncode=0,
+                      stdout='kuraya 0.5.11 already up-to-date.', stderr=''),
+            mock.Mock(returncode=0, stdout='Updated 1 tap.', stderr=''),
+            mock.Mock(returncode=0, stdout='', stderr=''),
+            mock.Mock(returncode=0, stdout='kuraya 0.5.12', stderr=''),
+        ]
+        (ok, version, already), run = self.run_upgrade(outcomes)
+        self.assertTrue(ok)
+        self.assertEqual(version, '0.5.12')
+        self.assertFalse(already)
+        calls = [c.args[0] for c in run.call_args_list]
+        self.assertEqual(calls[0][:2], ['brew', 'upgrade'])
+        self.assertEqual(calls[1][:2], ['brew', 'update'])
+        self.assertEqual(calls[2][:2], ['brew', 'upgrade'])
+        self.assertEqual(calls[3][:2], ['brew', 'list'])
+
+    def test_still_up_to_date_after_refresh(self):
+        """刷新后仍 up-to-date 才是真的最新"""
+        outcomes = [
+            mock.Mock(returncode=0,
+                      stdout='kuraya 0.5.12 already up-to-date.', stderr=''),
+            mock.Mock(returncode=0, stdout='Updated 1 tap.', stderr=''),
+            mock.Mock(returncode=0,
+                      stdout='kuraya 0.5.12 already up-to-date.', stderr=''),
+        ]
+        ok, version, already = self.run_upgrade(outcomes)[0]
+        self.assertTrue(ok)
+        self.assertEqual(version, '')
+        self.assertTrue(already)
+
+    def test_brew_missing_returns_failure(self):
+        (ok, version, already), _ = self.run_upgrade([OSError('no brew')])
+        self.assertFalse(ok)
+        self.assertEqual(version, '')
+        self.assertFalse(already)
 
 
 if __name__ == '__main__':

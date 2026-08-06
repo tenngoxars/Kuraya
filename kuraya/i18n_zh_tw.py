@@ -102,7 +102,7 @@ TABLE = {
     '已生成竖版海报': '已生成直立海報',
     '已跳过。以后想设置，运行 kuraya install 即可': '已略過。以後想設定，執行 kuraya install 即可',
     '库内共 {total} 部': '庫內共 {total} 部',
-    '将调用 brew upgrade kuraya（保持 Homebrew 状态一致），是否继续？[Y/n]': '將呼叫 brew upgrade kuraya（保持 Homebrew 狀態一致），是否繼續？[Y/n]',
+    '将调用 brew 更新 kuraya（先刷新索引再升级），是否继续？[Y/n]': '將呼叫 brew 更新 kuraya（先重新整理索引再升級），是否繼續？[Y/n]',
     '检测到 Homebrew 安装，正在调用 brew upgrade kuraya……': '偵測到 Homebrew 安裝，正在呼叫 brew upgrade kuraya……',
     'brew upgrade 执行失败，请手动运行该命令查看原因': 'brew upgrade 執行失敗，請手動執行該命令查看原因',
     '影片刮削与编目': '影片刮削與編目',

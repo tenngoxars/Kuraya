@@ -11,7 +11,7 @@ from kuraya import keys
 
 
 def _posix_env(first, rest=b''):
-    """构造 POSIX 分支的依赖：termios/tty/select 用假模块注入"""
+    """构造 POSIX 分支的依赖：termios/tty/select 替换 keys 模块属性"""
     termios = mock.MagicMock()
     termios.tcgetattr.return_value = 'old'
     select = mock.MagicMock()
@@ -24,6 +24,9 @@ def _posix_env(first, rest=b''):
         'modules': mock.patch.dict('sys.modules', {
             'termios': termios, 'tty': mock.MagicMock(), 'select': select,
         }),
+        'attrs': [mock.patch.object(keys, 'termios', termios),
+                  mock.patch.object(keys, 'select', select),
+                  mock.patch.object(keys, 'tty', mock.MagicMock())],
         'termios': termios,
     }
 
@@ -37,7 +40,8 @@ class ReadKeyPosix(unittest.TestCase):
 
     def key(self, first, rest=b''):
         env = _posix_env(first, rest)
-        with env['os.read'], env['isatty'], env['modules']:
+        with env['os.read'], env['isatty'], env['modules'], \
+             env['attrs'][0], env['attrs'][1], env['attrs'][2]:
             return keys._read_key_posix()
 
     def test_plain_char(self):
@@ -74,7 +78,8 @@ class ReadKeyPosix(unittest.TestCase):
     def test_raw_mode_restored(self):
         """无论结果如何都要恢复终端模式"""
         env = _posix_env(b'1')
-        with env['os.read'], env['isatty'], env['modules']:
+        with env['os.read'], env['isatty'], env['modules'], \
+             env['attrs'][0], env['attrs'][1], env['attrs'][2]:
             keys._read_key_posix()
         env['termios'].tcsetattr.assert_called_once_with(
             keys.sys.stdin.fileno(), env['termios'].TCSADRAIN, 'old')

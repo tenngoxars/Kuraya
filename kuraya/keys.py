@@ -10,6 +10,15 @@ import os
 import re
 import sys
 
+if os.name != 'nt':
+    # POSIX 终端控制模块。模块顶部加载：query_cursor 需要在写出
+    # 查询序列前立即进入 raw 模式，函数内 import 的耗时会让终端
+    # 应答在 ECHO 开启时到达并被回显到屏幕（^[[18;1R 之类）
+    import select
+    import termios
+    import tty
+    import time
+
 # VT 鼠标报告：启用后终端把点击以 SGR 序列（\x1b[<b;x;yM）发到输入流。
 # 仅现代终端支持（Windows Terminal / iTerm2 / xterm 等）；旧 conhost 忽略，
 # 点击无效但方向键照常。
@@ -80,23 +89,21 @@ def query_cursor():
     """查询光标位置，返回 (行, 列)。非 TTY 或终端无响应时返回 None"""
     if not os.isatty(sys.stdin.fileno()):
         return None
-    sys.stdout.write('\x1b[6n')
-    sys.stdout.flush()
     if os.name == 'nt':
         return _query_cursor_win()
     return _query_cursor_posix()
 
 
 def _query_cursor_posix():
-    import select
-    import termios
-    import tty
-    import time
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
-    buf = b''
     try:
+        # 先进入 raw 再写查询：若先写 6n，终端应答可能抢在
+        # setraw 之前到达，在 ECHO 开启时被回显到屏幕
         tty.setraw(fd)
+        sys.stdout.write('\x1b[6n')
+        sys.stdout.flush()
+        buf = b''
         deadline = time.monotonic() + 1  # 终端不应答时兜底，避免挂死
         while time.monotonic() < deadline:
             if not select.select([fd], [], [], 0.1)[0]:
@@ -116,7 +123,8 @@ def _query_cursor_posix():
 
 def _query_cursor_win():
     import msvcrt
-    import time
+    sys.stdout.write('\x1b[6n')
+    sys.stdout.flush()
     buf = b''
     deadline = time.monotonic() + 1
     while time.monotonic() < deadline:
@@ -203,9 +211,6 @@ def _read_key_posix():
             raise KeyboardInterrupt
         return ch
 
-    import select
-    import termios
-    import tty
     old = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)

@@ -41,7 +41,7 @@ def loop_io(keys_seq, cursor=(17, 1)):
 
 
 class KeyboardSelection(unittest.TestCase):
-    """方向键/数字键导航 + 回车确认；选中行整行底色高亮"""
+    """方向键/数字键导航 + 回车确认；选中行金色粗体高亮"""
 
     def test_arrows_move_selection(self):
         self.assertEqual(run_loop(['down', 'enter']), '2')
@@ -60,13 +60,14 @@ class KeyboardSelection(unittest.TestCase):
             for r in (12, 13, 14):
                 self.assertIn(f'\x1b[{r};1H\x1b[2K', out)
 
-    def test_selected_row_highlighted_with_background(self):
-        """方向键移到新行后，新选中行整行铺底色（精确色值 + 行尾填充）"""
+    def test_selected_row_highlighted_bold(self):
+        """方向键移到新行后，新选中行金色粗体高亮，且不再铺底色"""
         with loop_io(['down', 'enter']) as (result, out, clear, qc):
             self.assertEqual(result, '2')
-            # 重绘序列中选中行用深金棕底，行尾 \x1b[K 填满整行再复位
-            self.assertIn('\x1b[48;5;58m', out)
-            self.assertIn('\x1b[K\x1b[0m', out)
+            # 重绘序列中选中行带粗体序列
+            self.assertIn('\x1b[1m', out)
+            # 判别性：底色高亮已撤回，不得再出现背景色序列
+            self.assertNotIn('48;5;', out)
 
     def test_arrows_without_cursor_fallback(self):
         """CPR 不可用（终端不应答）时方向键回退整屏重绘，不崩溃"""

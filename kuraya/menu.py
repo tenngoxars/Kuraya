@@ -78,14 +78,13 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
     print('\x1b[?1049h', end='', flush=True)
     try:
         def option_text(i):
-            """选项行文本。选中行整行铺底色（行尾 \x1b[K 填满），
-            行内颜色不再中途 RESET，避免底色被截断"""
+            """选项行文本。选中行金色粗体高亮"""
             key, label, desc = options[i]
             gap = ' ' * max(2, 14 - dw(label))
             if i == selected:
-                return (f'  {C.BG_SEL}{C.GOLD}▸ {C.GOLD}{key}  '
-                        f'{C.BOLD}{C.GOLD}{label}{gap}{C.GREY}{desc}'
-                        f'\x1b[K\x1b[0m')
+                return (f'  {C.GOLD}▸{C.RESET} {C.GOLD}{key}{C.RESET}  '
+                        f'{C.BOLD}{label}{C.RESET}'
+                        f'{gap}{C.FAINT}{desc}{C.RESET}')
             return (f'  {C.GREY}·{C.RESET} {C.GOLD}{key}{C.RESET}  {label}'
                     f'{gap}{C.FAINT}{desc}{C.RESET}')
 

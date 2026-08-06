@@ -155,7 +155,7 @@ class LibraryPathInput(unittest.TestCase):
         buffer = io.StringIO()
         with mock.patch('builtins.input', return_value=typed), \
              redirect_stdout(buffer):
-            return setup.ask_library_path()
+            return setup.ask_path('测试目录')
 
     def test_accepts_existing_directory(self):
         self.assertEqual(self.ask(str(self.existing)), str(self.existing))
@@ -174,7 +174,7 @@ class LibraryPathInput(unittest.TestCase):
         buffer = io.StringIO()
         with mock.patch('builtins.input', side_effect=EOFError), \
              redirect_stdout(buffer):
-            self.assertEqual(setup.ask_library_path(), '')
+            self.assertEqual(setup.ask_path('测试目录'), '')
 
 
 class Empty(unittest.TestCase):

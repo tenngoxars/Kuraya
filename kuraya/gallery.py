@@ -26,7 +26,7 @@ try:
 except ImportError:
     # 直接以脚本方式运行时包不在搜索路径，按同值回退
     VIDEO_EXTS = ('.mp4', '.mkv', '.avi', '.wmv', '.ts', '.mov',
-                  '.m4v', '.rmvb', '.iso', '.mpg', '.mpeg', '.flv')  # 与 media 同值
+                  '.m4v', '.rmvb', '.iso', '.mpg', '.mpeg', '.flv')  # 与 formats.py 同值
 
 # 界面模板随包走；裸脚本运行时按本文件位置推算
 try:

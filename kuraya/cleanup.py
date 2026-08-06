@@ -22,7 +22,7 @@ try:
 except ImportError:
     # 裸脚本运行（python cleanup.py <目录>）时包不在搜索路径
     VIDEO_EXTS = ('.mp4', '.mkv', '.avi', '.wmv', '.ts', '.mov',
-                  '.m4v', '.rmvb', '.iso', '.mpg', '.mpeg', '.flv')  # 与 media 同值
+                  '.m4v', '.rmvb', '.iso', '.mpg', '.mpeg', '.flv')  # 与 formats.py 同值
 
 
 def library_inodes(source, library):

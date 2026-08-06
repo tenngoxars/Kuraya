@@ -8,9 +8,9 @@ import shutil
 import sys
 from pathlib import Path
 
-# 视频扩展名：定义在 media（引擎），cleanup/gallery/menu 从这里引用，
-# 新增格式只改 media 一处（曾分叉成两份导致 .flv/.mpeg 被清理器漏认而误删）
-from .media import VIDEO_EXTS
+# 视频扩展名：定义在 formats（叶子模块，零依赖），cleanup/gallery/menu
+# 从这里引用；不放在 media——settings 拉引擎会让每次 CLI 启动多付 ~100ms
+from .formats import VIDEO_EXTS
 
 FROZEN = getattr(sys, 'frozen', False)
 PKG_DIR = Path(__file__).resolve().parent

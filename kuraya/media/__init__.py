@@ -21,9 +21,9 @@ from .model import (CoverReady, Event, FailReason, Failed, Fetched, Found,
 
 __all__ = ['process', 'scan', 'Settings']
 
-# 视频扩展名唯一来源：界面层（settings）引用此处，新增格式只改这一处
-VIDEO_EXTS = ('.mp4', '.mkv', '.avi', '.wmv', '.ts', '.mov',
-              '.m4v', '.rmvb', '.iso', '.mpg', '.mpeg', '.flv')
+# 视频扩展名唯一来源在 kuraya/formats.py（叶子模块，避免界面层为取
+# 常量而拖入整个引擎）
+from ..formats import VIDEO_EXTS
 
 
 def process(settings: Settings) -> Iterator[Event]:

@@ -85,9 +85,26 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
     # 转发鼠标事件，普通屏幕下点击会被终端 UI 拦截
     print('\x1b[?1049h', end='', flush=True)
     try:
-        while True:
-            # 整屏重绘期间隐藏光标：Windows cls 逐行重画时
-            # 光标在每行短暂停留，看起来像闪屏
+        def option_text(i):
+            """选项行文本。选中行整行铺底色（行尾 \x1b[K 填满），
+            行内颜色不再中途 RESET，避免底色被截断"""
+            key, label, desc = options[i]
+            gap = ' ' * max(2, 14 - dw(label))
+            if i == selected:
+                return (f'  {C.BG_SEL}{C.GOLD}▸ {C.GOLD}{key}  '
+                        f'{C.BOLD}{C.GOLD}{label}{gap}{C.GREY}{desc}'
+                        f'\x1b[K\x1b[0m')
+            return (f'  {C.GREY}·{C.RESET} {C.GOLD}{key}{C.RESET}  {label}'
+                    f'{gap}{C.FAINT}{desc}{C.RESET}')
+
+        hint = tr('↑↓ 选择 · 回车 确认 · 悬停高亮 · 点击执行 · Esc {action}',
+                  action=esc_label)
+
+        def draw_all():
+            """整屏重绘。只在进入菜单与 CPR 不可用（回退）时调用：
+            菜单内容固定，之后悬停/方向键只局部重绘两行。
+            整屏重绘期间隐藏光标：Windows cls 逐行重画时
+            光标在每行短暂停留，看起来像闪屏"""
             print('\x1b[?25l', end='', flush=True)
             clear_screen()
             say()
@@ -97,63 +114,82 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
             say()
             rule()
             say()
-            for i, (key, label, desc) in enumerate(options):
-                if i == selected:
-                    say(f'  {C.GOLD}▸{C.RESET} {C.GOLD}{key}{C.RESET}  '
-                        f'{C.BOLD}{label}{C.RESET}'
-                        f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}')
-                else:
-                    say(f'  {C.GREY}·{C.RESET} {C.GOLD}{key}{C.RESET}  {label}'
-                        f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}')
+            for i in range(n):
+                say(option_text(i))
             say()
-            hint = tr('↑↓ 选择 · 回车 确认 · 悬停高亮 · 点击执行 · Esc {action}',
-                      action=esc_label)
             # 完整换行输出：光标落在下一行行首，不悬停在行尾
             # （悬停会让终端/Warp 把提示行当输入块，方向键被拦截）
             print(f'  {C.FAINT}{hint}{C.RESET}')
             print('\x1b[?25h', end='', flush=True)
-            # 光标在提示行的下一行（print 换行后）；
-            # 选项 i 所在行 = 光标行 - n - 2 + i，点击坐标由此映射到选项
-            cursor = query_cursor()
-            # 终端鼠标提示放在光标查询之后输出，不影响点击行号映射
-            if status != 'ok' and not _mouse_hint_shown:
-                if status == 'warp-needs-toggle':
-                    warn = tr('提示：Warp 需开启 Mouse Reporting（菜单 View '
-                              '→ Toggle Mouse Reporting）才能点击菜单')
-                else:
-                    warn = tr('提示：当前终端不支持鼠标点击，请用方向键'
-                              '选择（或换 iTerm2/Warp）')
-                print(f'  {C.FAINT}{warn}{C.RESET}')
-                _mouse_hint_shown = True
-            while True:
-                # 内层读键循环：悬停在同一选项行内不重绘（1003 事件流
-                # 很密，全屏重绘会闪）；跨行/按键才回到外层重绘
-                key = read_key()
-                if isinstance(key, tuple):
-                    if not cursor:
-                        continue
-                    _, _, row = key
-                    hit = row - cursor[0] + n + 2
-                    if key[0] == 'hover':
-                        if 0 <= hit < n and hit != selected:
-                            selected = hit
-                            break
-                        continue
-                    if 0 <= hit < n:
-                        return options[hit][0]  # 点击执行目标行
+
+        draw_all()
+        # 光标在提示行的下一行（print 换行后）；
+        # 选项 i 所在行 = 光标行 - n - 2 + i，点击坐标由此映射到选项。
+        # 只查一次：菜单内容固定，光标位置与行号映射此后不变，
+        # 跨行悬停不再反复 CPR 查询（\x1b[6n 应答要等几十毫秒）
+        cursor = query_cursor()
+        # 终端鼠标提示放在光标查询之后输出，不影响点击行号映射
+        if status != 'ok' and not _mouse_hint_shown:
+            if status == 'warp-needs-toggle':
+                warn = tr('提示：Warp 需开启 Mouse Reporting（菜单 View '
+                          '→ Toggle Mouse Reporting）才能点击菜单')
+            else:
+                warn = tr('提示：当前终端不支持鼠标点击，请用方向键'
+                          '选择（或换 iTerm2/Warp）')
+            print(f'  {C.FAINT}{warn}{C.RESET}')
+            _mouse_hint_shown = True
+            if cursor:
+                # 提示行在光标查询后打印，实际光标已下移一行，
+                # 修正局部重绘的光标恢复基准（否则落回提示行上）
+                cursor = (cursor[0] + 1, 1)
+
+        def repaint(i):
+            """局部重绘第 i 个选项行，重绘后光标移回原位不打扰"""
+            row = cursor[0] - n - 2 + i
+            print(f'\x1b[{row};1H\x1b[2K{option_text(i)}'
+                  f'\x1b[{cursor[0]};{cursor[1]}H', end='', flush=True)
+
+        while True:
+            key = read_key()
+            if isinstance(key, tuple):
+                if not cursor:
                     continue
-                if key in ('up', 'down'):
-                    selected = (selected - 1 if key == 'up'
-                                else selected + 1) % n
-                    break
-                if key in ('enter', ''):
-                    return options[selected][0]
-                if key in ('esc', 'eof'):
-                    return None
-                if key.isdigit():
-                    for k, _, _ in options:
-                        if k == key:
-                            return k
+                _, _, row = key
+                hit = row - cursor[0] + n + 2
+                if key[0] == 'hover':
+                    # 悬停同一选项行内不重绘（1003 事件流很密）；
+                    # 跨行只重画旧/新两行，不再整屏重绘
+                    if 0 <= hit < n and hit != selected:
+                        old = selected
+                        selected = hit
+                        repaint(old)
+                        repaint(hit)
+                    continue
+                if 0 <= hit < n:
+                    return options[hit][0]  # 点击执行目标行
+                continue
+            if key in ('up', 'down'):
+                old = selected
+                selected = (selected - 1 if key == 'up'
+                            else selected + 1) % n
+                if cursor:
+                    if old != selected:
+                        repaint(old)
+                        repaint(selected)
+                else:
+                    # CPR 不可用（终端不应答）时无法定位局部重绘，
+                    # 回退整屏重绘并重查光标：方向键照常可用
+                    draw_all()
+                    cursor = query_cursor()
+                continue
+            if key in ('enter', ''):
+                return options[selected][0]
+            if key in ('esc', 'eof'):
+                return None
+            if key.isdigit():
+                for k, _, _ in options:
+                    if k == key:
+                        return k
     finally:
         disable_mouse()
         print('\x1b[?1049l', end='', flush=True)

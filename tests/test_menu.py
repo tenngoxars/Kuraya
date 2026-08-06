@@ -4,6 +4,7 @@
 
     python -m unittest discover tests
 """
+import contextlib
 import unittest
 from unittest import mock
 
@@ -16,16 +17,31 @@ OPTIONS = [('1', '甲', ''), ('2', '乙', ''), ('3', '丙', '')]
 
 
 def run_loop(keys_seq, cursor=(17, 1)):
-    """渲染用空函数（行数不影响行号公式，只依赖光标行），喂入按键序列"""
-    with mock.patch.object(menu, 'clear_screen'), \
+    """渲染用空函数（行数不影响行号公式，只依赖光标行），喂入按键序列。
+    基于 loop_io 复用 mock 样板，并重定向局部重绘输出"""
+    with loop_io(keys_seq, cursor) as (result, _out, _clear, _qc):
+        return result
+
+
+@contextlib.contextmanager
+def loop_io(keys_seq, cursor=(17, 1), mouse_status='ok'):
+    """运行 menu_loop 并暴露输出与内部 mock，供断言重绘序列/次数的测试复用"""
+    import io
+    from contextlib import redirect_stdout
+    buffer = io.StringIO()
+    with mock.patch.object(menu, 'clear_screen') as clear, \
          mock.patch.object(menu, 'brand'), \
          mock.patch.object(menu, 'rule'), \
          mock.patch.object(menu, 'say'), \
-         mock.patch('kuraya.keys.query_cursor', return_value=cursor), \
+         mock.patch('kuraya.keys.query_cursor', return_value=cursor) as qc, \
          mock.patch('kuraya.keys.read_key', side_effect=list(keys_seq)), \
          mock.patch('kuraya.keys.enable_mouse'), \
-         mock.patch('kuraya.keys.disable_mouse'):
-        return menu.menu_loop(lambda: None, OPTIONS)
+         mock.patch('kuraya.keys.disable_mouse'), \
+         mock.patch('kuraya.keys.terminal_mouse_status',
+                    return_value=mouse_status), \
+         redirect_stdout(buffer):
+        result = menu.menu_loop(lambda: None, OPTIONS)
+    yield result, buffer.getvalue(), clear, qc
 
 
 class ClickSelection(unittest.TestCase):
@@ -143,24 +159,51 @@ class ClickSelection(unittest.TestCase):
 
     def test_warp_hint_shown_once(self):
         """Warp 下提示开启 Mouse Reporting，且每会话只提示一次"""
-        import io
-        from contextlib import redirect_stdout
         menu._mouse_hint_shown = False
-        buffer = io.StringIO()
-        with mock.patch.object(menu, 'clear_screen'), \
-             mock.patch.object(menu, 'brand'), \
-             mock.patch.object(menu, 'rule'), \
-             mock.patch.object(menu, 'say'), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(17, 1)), \
-             mock.patch('kuraya.keys.read_key', return_value='enter'), \
-             mock.patch('kuraya.keys.enable_mouse'), \
-             mock.patch('kuraya.keys.disable_mouse'), \
-             mock.patch('kuraya.keys.terminal_mouse_status',
-                        return_value='warp-needs-toggle'), \
-             redirect_stdout(buffer):
-            menu.menu_loop(lambda: None, OPTIONS)
-        self.assertIn('Mouse Reporting', buffer.getvalue())
+        with loop_io(['enter'], mouse_status='warp-needs-toggle') as \
+                (result, out, clear, qc):
+            self.assertIn('Mouse Reporting', out)
         menu._mouse_hint_shown = False
+
+    def test_warp_hint_cursor_baseline_adjusted(self):
+        """无鼠标终端打印提示后，光标恢复基准下移到提示行下方"""
+        menu._mouse_hint_shown = False
+        with loop_io(['down', 'enter'],
+                     mouse_status='warp-needs-toggle') as (result, out, clear, qc):
+            self.assertEqual(result, '2')
+            # 提示行输出一行后光标基准 +1：重绘后恢复到提示行下一行
+            self.assertIn('\x1b[18;1H', out)
+
+    def test_hover_cross_row_repaints_rows_only(self):
+        """跨行悬停只局部重绘两行：整屏不重绘、光标不重复查询"""
+        with loop_io([self.hover(13), self.hover(14), 'enter']) as \
+                (result, out, clear, qc):
+            self.assertEqual(result, '3')
+            self.assertEqual(clear.call_count, 1)   # 整屏只绘一次
+            self.assertEqual(qc.call_count, 1)      # CPR 只查一次（不再逐次查询）
+            # 局部重绘定位序列：选项 0/1/2 行 = 12/13/14
+            for r in (12, 13, 14):
+                self.assertIn(f'\x1b[{r};1H\x1b[2K', out)
+
+    def test_arrows_repaint_rows_only(self):
+        """方向键选择同样只局部重绘，不整屏重绘"""
+        with loop_io(['down', 'down', 'enter']) as (result, out, clear, qc):
+            self.assertEqual(result, '3')
+            self.assertEqual(clear.call_count, 1)
+
+    def test_selected_row_highlighted_with_background(self):
+        """悬停切到新行后，新选中行整行铺底色（精确色值 + 行尾填充）"""
+        with loop_io([self.hover(13), 'enter']) as (result, out, clear, qc):
+            self.assertEqual(result, '2')
+            # 重绘序列中选中行用深金棕底，行尾 \x1b[K 填满整行再复位
+            self.assertIn('\x1b[48;5;58m', out)
+            self.assertIn('\x1b[K\x1b[0m', out)
+
+    def test_arrows_without_cursor_fallback(self):
+        """CPR 不可用（终端不应答）时方向键回退整屏重绘，不崩溃"""
+        with loop_io(['down', 'enter'], cursor=None) as (result, out, clear, qc):
+            self.assertEqual(result, '2')
+            self.assertGreater(clear.call_count, 1)  # 初次 + 方向键回退重绘
 
 
 if __name__ == '__main__':

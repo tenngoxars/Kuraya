@@ -27,6 +27,7 @@ from .i18n import tr
 from .settings import FROZEN
 
 REPO = 'tenngoxars/Kuraya'
+TAP = 'tenngoxars/homebrew-tap'
 RELEASES_API = f'https://api.github.com/repos/{REPO}/releases/latest'
 RELEASES_URL = f'https://github.com/{REPO}/releases/latest'
 
@@ -315,14 +316,26 @@ def _run_brew_upgrade():
     执行 brew upgrade kuraya。返回 (是否成功, 新版本号, 是否本就最新)。
     新版本号从 brew list --versions 读取。
     brew 不自动刷新 tap 索引，本地 formula 可能停在旧版导致
-    「已是最新」误报，遇到 up-to-date 先 brew update 再重试一次。
+    「已是最新」误报；但全量 brew update 会拉 homebrew-core 等所有
+    仓库（国内网络经常卡在 Updating Homebrew），因此只刷新 kuraya
+    所在的 tap（brew tap-update），并禁用 upgrade 自带的自动更新。
     """
 
     def upgrade():
+        env = dict(os.environ, HOMEBREW_NO_AUTO_UPDATE='1')
         try:
             return subprocess.run(['brew', 'upgrade', 'kuraya'],
-                                  capture_output=True, text=True)
-        except OSError:
+                                  capture_output=True, text=True,
+                                  env=env, timeout=300)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
+    def tap_update():
+        try:
+            return subprocess.run(['brew', 'tap-update', TAP],
+                                  capture_output=True, text=True,
+                                  timeout=120)
+        except (OSError, subprocess.TimeoutExpired):
             return None
 
     result = upgrade()
@@ -330,11 +343,8 @@ def _run_brew_upgrade():
         return False, '', False
     output = (result.stdout or '') + (result.stderr or '')
     if result.returncode == 0 and 'up-to-date' in output:
-        try:
-            subprocess.run(['brew', 'update'], capture_output=True,
-                           text=True, timeout=600)
-        except (OSError, subprocess.TimeoutExpired):
-            pass
+        # 本地 formula 索引可能没跟上发版：只刷新 kuraya 的 tap 再重试
+        tap_update()
         result = upgrade()
         if result is None:
             return False, '', False

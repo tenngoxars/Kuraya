@@ -7,8 +7,6 @@
 import json
 import os
 import re
-import subprocess
-import sys
 
 from . import launcher, picker, settings, setup, updater
 from .i18n import tr
@@ -125,25 +123,6 @@ def draw_header(library, source):
     if notice:
         say()
         say(notice)
-
-
-def open_library(library):
-    """用默认浏览器打开片库页面"""
-    index = os.path.join(str(library), 'index.html')
-    if not os.path.isfile(index):
-        say(f'    {C.RED}✕ {tr("页面尚未生成，请先执行「重建页面」")}{C.RESET}')
-        return
-    try:
-        if os.name == 'nt':
-            os.startfile(index)
-        elif sys.platform == 'darwin':
-            subprocess.Popen(['open', index])
-        else:
-            subprocess.Popen(['xdg-open', index])
-        say(f'    {C.GREEN}✓{C.RESET} {tr("已在浏览器中打开")}')
-    except OSError as exc:
-        open_err = tr('打开失败：{exc}', exc=exc)
-        say(f'    {C.RED}✕ {open_err}{C.RESET}')
 
 
 def edit_setting(label, key, kind='folder'):
@@ -312,9 +291,11 @@ def run():
             return 0
         if choice == '1':
             say()
-            launcher.cmd_all(library, source)
+            _, offered = launcher.cmd_all(library, source)
             launcher.spin.stop()
-            pause()
+            # 刮削后的「打开片库」选择器已经让用户按过键，不必再等一次回车
+            if not offered:
+                pause()
         elif choice == '2':
             say()
             launcher.cmd_rebuild(library)
@@ -322,7 +303,7 @@ def run():
             pause()
         elif choice == '3':
             say()
-            open_library(library)
+            launcher.open_library(library)
             pause()
         elif choice == '4':
             settings_menu()

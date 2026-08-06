@@ -355,7 +355,8 @@ def main():
             return CONFIG_ERROR
         library, source = paths
 
-        opts = {'limit': opt('limit'), 'dry_run': opt('dry_run', False)}
+        opts = {'limit': opt('limit'), 'dry_run': opt('dry_run', False),
+                'yes': opt('yes', False)}
 
         if args.command == 'rebuild':
             launcher.cmd_rebuild(library)
@@ -363,7 +364,7 @@ def main():
             stats = launcher.cmd_scrape(library, source, opts)
             code = PARTIAL if stats['failed'] else OK
         else:
-            stats = launcher.cmd_all(library, source, opts)
+            stats, _ = launcher.cmd_all(library, source, opts)
             code = PARTIAL if stats['failed'] else OK
 
         # 精简模式下装饰性输出全被抑制，单独给一行结果供脚本读取

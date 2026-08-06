@@ -402,6 +402,66 @@ def cmd_scrape(library, source, opts=None):
     return stats
 
 
+def open_library(library):
+    """用默认浏览器打开片库页面。页面未生成或打开失败时给出提示"""
+    index = os.path.join(str(library), 'index.html')
+    if not os.path.isfile(index):
+        say(f'    {C.RED}✕ {tr("页面尚未生成，请先执行「重建页面」")}{C.RESET}')
+        return
+    try:
+        if os.name == 'nt':
+            os.startfile(index)
+        elif sys.platform == 'darwin':
+            subprocess.Popen(['open', index])
+        else:
+            subprocess.Popen(['xdg-open', index])
+        say(f'    {C.GREEN}✓{C.RESET} {tr("已在浏览器中打开")}')
+    except OSError as exc:
+        open_err = tr('打开失败：{exc}', exc=exc)
+        say(f'    {C.RED}✕ {open_err}{C.RESET}')
+
+
+def offer_open_library(library, opts=None):
+    """刮削完成后选择是否直接打开片库；quiet / 计划任务模式跳过。
+    返回是否出现过选择器——调用方用它决定是否还需要「按回车继续」"""
+    if QUIET or (opts or {}).get('yes'):
+        return False
+    from . import keys
+    choices = [(tr('打开片库'), tr('在浏览器中查看')),
+               (tr('稍后再说'), '')]
+    selected = 0
+    height = len(choices) + 1  # 选项行 + 提示行
+
+    def render():
+        for i, (label, desc) in enumerate(choices):
+            mark, style = ((C.GOLD + '▸', C.BOLD) if i == selected
+                           else (C.GREY + '·', ''))
+            print(f'  {mark}{C.RESET}  {style}{label}{C.RESET}'
+                  f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}'
+                  f'\x1b[K')
+        print(f'  {C.FAINT}{tr("↑↓ 选择 · 回车 确认 · Esc 跳过")}{C.RESET}'
+              f'\x1b[K')
+
+    say()
+    render()
+    while True:
+        key = keys.read_key()
+        if key == 'up':
+            selected = (selected - 1) % len(choices)
+        elif key == 'down':
+            selected = (selected + 1) % len(choices)
+        elif key in ('enter', ''):
+            if selected == 0:
+                open_library(library)
+            return True
+        elif key in ('esc', 'eof', 'backspace', '?'):
+            return True
+        else:
+            continue
+        sys.stdout.write(f'\x1b[{height}A')
+        render()
+
+
 def cmd_rebuild(library):
     """只重建片库页面。返回收录总数"""
     brand()
@@ -432,5 +492,6 @@ def cmd_all(library, source, opts=None):
     bits.append(tr("库内共 {total} 部", total=total))
     bits.append(tr("耗时 {elapsed:.0f}s", elapsed=time.time() - t0))
     tone = C.RED if stats['failed'] else C.GREEN
-    box([(' · '.join(bits), tone), (tr("打开或切回 index.html 查看"), C.FAINT)], tone)
-    return stats
+    box([(' · '.join(bits), tone)], tone)
+    offered = offer_open_library(library, opts)
+    return stats, offered

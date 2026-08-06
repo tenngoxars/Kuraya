@@ -241,5 +241,70 @@ class ChildProtocol(unittest.TestCase):
         self.assertEqual(self.refresh(['一些无关输出']), 0)
 
 
+class OfferOpenLibrary(unittest.TestCase):
+    """完整流程完成后用方向键选择是否直接打开片库"""
+
+    def run_all(self, keys=('enter',), quiet=False, yes=False):
+        read = mock.Mock(side_effect=list(keys))
+        opened = mock.Mock()
+        buffer = io.StringIO()
+        with mock.patch.object(launcher, 'do_scrape',
+                               return_value={'found': 1, 'done': 1,
+                                             'failed': 0}), \
+             mock.patch.object(launcher, 'do_clean'), \
+             mock.patch.object(launcher, 'do_refresh', return_value=5), \
+             mock.patch.object(launcher, 'QUIET', quiet), \
+             mock.patch('kuraya.keys.read_key', read), \
+             mock.patch.object(launcher, 'open_library', opened), \
+             redirect_stdout(buffer):
+            stats, offered = launcher.cmd_all(Path('lib'), Path('src'),
+                                              {'yes': yes})
+        return read, opened, offered
+
+    def test_enter_opens_library(self):
+        """默认高亮「打开片库」，回车即打开；交互过就不必再等回车"""
+        read, opened, offered = self.run_all(keys=('enter',))
+        read.assert_called_once()
+        opened.assert_called_once()
+        self.assertTrue(offered)
+
+    def test_down_enter_skips(self):
+        """↓ 切到「稍后再说」再回车，不打开"""
+        read, opened, offered = self.run_all(keys=('down', 'enter'))
+        opened.assert_not_called()
+        self.assertTrue(offered)
+
+    def test_esc_skips(self):
+        read, opened, offered = self.run_all(keys=('esc',))
+        opened.assert_not_called()
+        self.assertTrue(offered)
+
+    def test_down_redraws_selection(self):
+        """方向键后上移重绘选择区，两行选项 + 提示行"""
+        buffer = io.StringIO()
+        opened = mock.Mock()
+        with mock.patch('kuraya.keys.read_key',
+                        side_effect=['down', 'enter']), \
+             mock.patch.object(launcher, 'open_library', opened), \
+             redirect_stdout(buffer):
+            launcher.offer_open_library(Path('lib'))
+        out = buffer.getvalue()
+        self.assertIn('\x1b[3A', out)          # 上移三行重绘（两选项 + 提示）
+        self.assertIn('稍后再说', out)          # 第二项存在
+        opened.assert_not_called()
+
+    def test_quiet_skips_prompt(self):
+        read, opened, offered = self.run_all(quiet=True)
+        read.assert_not_called()
+        opened.assert_not_called()
+        self.assertFalse(offered)
+
+    def test_yes_skips_prompt(self):
+        read, opened, offered = self.run_all(yes=True)
+        read.assert_not_called()
+        opened.assert_not_called()
+        self.assertFalse(offered)
+
+
 if __name__ == '__main__':
     unittest.main()

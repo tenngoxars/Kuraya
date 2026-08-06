@@ -170,6 +170,29 @@ class MouseMode(unittest.TestCase):
     def test_parse_cpr_garbage(self):
         self.assertIsNone(keys._parse_cpr(b'not-a-cpr'))
 
+    def test_windows_toggles_stdin_vt(self):
+        """Windows 上启用鼠标时把 stdin 切到 VT 输入，退出恢复"""
+        with mock.patch.object(keys.os, 'name', 'nt'), \
+             mock.patch('kuraya.keys._win_stdin_vt') as vt:
+            keys.enable_mouse()
+            keys.disable_mouse()
+        vt.assert_has_calls([mock.call(True), mock.call(False)])
+
+    def test_win_stdin_vt_sets_console_mode(self):
+        """stdin 模式切到 PROCESSED|VT_INPUT，退出恢复原值"""
+        windll = mock.MagicMock()
+
+        def fake_get_console_mode(h, m):
+            return True  # mode.value 保持 0，恢复时走 or 3 兜底
+
+        windll.kernel32.GetConsoleMode.side_effect = fake_get_console_mode
+        with mock.patch('ctypes.windll', windll, create=True):
+            keys._win_stdin_vt(True)
+            keys._win_stdin_vt(False)
+        calls = windll.kernel32.SetConsoleMode.call_args_list
+        self.assertEqual(calls[0].args[1], 0x201)  # PROCESSED|VT_INPUT
+        self.assertEqual(calls[1].args[1], 3)      # 恢复原模式
+
 
 if __name__ == '__main__':
     unittest.main()

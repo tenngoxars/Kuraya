@@ -78,6 +78,9 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
     enable_mouse()
     try:
         while True:
+            # 整屏重绘期间隐藏光标：Windows cls 逐行重画时
+            # 光标在每行短暂停留，看起来像闪屏
+            print('\x1b[?25l', end='', flush=True)
             clear_screen()
             say()
             brand()
@@ -100,6 +103,7 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
             # 完整换行输出：光标落在下一行行首，不悬停在行尾
             # （悬停会让终端/Warp 把提示行当输入块，方向键被拦截）
             print(f'  {C.FAINT}{hint}{C.RESET}')
+            print('\x1b[?25h', end='', flush=True)
             # 光标在提示行的下一行（print 换行后），选项 i 所在行 =
             # 光标行 - 2(空行+提示行) - (n - 1 - i)，点击命中即选中
             cursor = query_cursor()

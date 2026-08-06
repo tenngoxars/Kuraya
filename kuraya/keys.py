@@ -17,6 +17,35 @@ MOUSE_ENABLE = '\x1b[?1000h\x1b[?1006h'
 MOUSE_DISABLE = '\x1b[?1000l\x1b[?1006l'
 
 _mouse_depth = 0  # 菜单嵌套时引用计数，最外层退出才真正关闭
+_win_stdin_mode = None  # Windows 原始 stdin 控制台模式，退出时恢复
+
+
+def _win_stdin_vt(on):
+    """
+    Windows 切换 stdin 的 VT 输入模式。
+
+    默认控制台 stdin 是 LINE+ECHO 模式，方向键/鼠标报告/CPR 应答的
+    \\x1b 序列进不来且会被回显（屏幕上出现 ^[[18;1R 之类）；切到
+    PROCESSED+VT_INPUT 后以原始序列到达。退出时恢复原模式，
+    避免影响 input() 等行输入（如 updater 的更新确认）。
+    """
+    global _win_stdin_mode
+    try:
+        import ctypes
+        k = ctypes.windll.kernel32
+        h = k.GetStdHandle(-10)  # STD_INPUT_HANDLE
+        mode = ctypes.c_uint32()
+        if not k.GetConsoleMode(h, ctypes.byref(mode)):
+            return
+        if on:
+            if _win_stdin_mode is None:
+                _win_stdin_mode = mode.value
+            k.SetConsoleMode(h, 0x201)  # PROCESSED_INPUT | VT_INPUT
+        else:
+            k.SetConsoleMode(h, _win_stdin_mode or 3)
+            _win_stdin_mode = None
+    except Exception:
+        pass
 
 
 def enable_mouse():
@@ -26,6 +55,8 @@ def enable_mouse():
         return
     _mouse_depth += 1
     if _mouse_depth == 1:
+        if os.name == 'nt':
+            _win_stdin_vt(True)
         sys.stdout.write(MOUSE_ENABLE)
         sys.stdout.flush()
 
@@ -36,6 +67,8 @@ def disable_mouse():
     if _mouse_depth > 0:
         _mouse_depth -= 1
     if _mouse_depth == 0:
+        if os.name == 'nt':
+            _win_stdin_vt(False)
         try:
             sys.stdout.write(MOUSE_DISABLE)
             sys.stdout.flush()

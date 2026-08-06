@@ -69,6 +69,24 @@ class ClickSelection(unittest.TestCase):
         enable.assert_called_once()
         disable.assert_called_once()
 
+    def test_cursor_hidden_during_redraw(self):
+        """整屏重绘期间隐藏光标，渲染完恢复（消除 Windows 重绘闪烁）"""
+        import io
+        from contextlib import redirect_stdout
+        buffer = io.StringIO()
+        with mock.patch.object(menu, 'clear_screen'), \
+             mock.patch.object(menu, 'brand'), \
+             mock.patch.object(menu, 'rule'), \
+             mock.patch.object(menu, 'say'), \
+             mock.patch('kuraya.keys.query_cursor', return_value=(17, 1)), \
+             mock.patch('kuraya.keys.read_key', return_value='enter'), \
+             mock.patch('kuraya.keys.enable_mouse'), \
+             mock.patch('kuraya.keys.disable_mouse'), \
+             redirect_stdout(buffer):
+            menu.menu_loop(lambda: None, OPTIONS)
+        out = buffer.getvalue()
+        self.assertLess(out.index('\x1b[?25l'), out.index('\x1b[?25h'))
+
 
 if __name__ == '__main__':
     unittest.main()

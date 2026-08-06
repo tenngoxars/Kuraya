@@ -292,7 +292,7 @@ def _brew_update(yes=False, quiet=False):
         print(f'  {C.GREY}{tr("检测到 Homebrew 安装，正在调用 brew upgrade kuraya……")}'
               f'{C.RESET}')
 
-    ok, version, already = _run_brew_upgrade()
+    ok, version, already = _run_brew_upgrade(quiet=quiet)
     if quiet:
         print(f'updated={version or ("none" if already else "error")}')
         return 0 if ok else 1
@@ -311,14 +311,17 @@ def _brew_update(yes=False, quiet=False):
     return 0
 
 
-def _run_brew_upgrade():
+def _run_brew_upgrade(quiet=False):
     """
     执行 brew upgrade kuraya。返回 (是否成功, 新版本号, 是否本就最新)。
     新版本号从 brew list --versions 读取。
-    brew 不自动刷新 tap 索引，本地 formula 可能停在旧版导致
-    「已是最新」误报；但全量 brew update 会拉 homebrew-core 等所有
-    仓库（国内网络经常卡在 Updating Homebrew），因此只刷新 kuraya
-    所在的 tap（brew tap-update），并禁用 upgrade 自带的自动更新。
+    必须**先刷新 tap 再 upgrade**：brew 不自动刷新 tap 索引，本地
+    formula 停在旧版时 upgrade 会「成功」装到旧 formula 的版本（永远
+    追不上最新）；全量 brew update 会拉 homebrew-core 等所有仓库
+    （国内网络经常卡在 Updating Homebrew），因此只 git pull kuraya
+    所在的 tap，并禁用 upgrade 自带的自动更新。
+    「已是最新」的判定兼容新旧 brew 措辞：up-to-date / already installed
+    （实测现代 brew 输出 Warning: ... already installed）。
     """
 
     def upgrade():
@@ -349,23 +352,18 @@ def _run_brew_upgrade():
         except (OSError, subprocess.TimeoutExpired):
             return False
 
+    if not tap_update() and not quiet:
+        # formula 停在旧版时 upgrade 仍会「成功」装旧版，须让用户知情
+        from .launcher import C
+        print(f'  {C.GREY}{tr("tap 刷新失败，可能不是最新版本")}{C.RESET}')
     result = upgrade()
     if result is None:
         return False, '', False
     output = (result.stdout or '') + (result.stderr or '')
-    if result.returncode == 0 and 'up-to-date' in output:
-        # 本地 formula 索引可能没跟上发版：只刷新 kuraya 的 tap 再重试
-        if tap_update():
-            result = upgrade()
-        if result is None:
-            return False, '', False
-        output = (result.stdout or '') + (result.stderr or '')
-        if result.returncode != 0:
-            return False, '', False
-        if 'up-to-date' in output:
-            return True, '', True
-    elif result.returncode != 0:
+    if result.returncode != 0:
         return False, '', False
+    if 'up-to-date' in output or 'already installed' in output:
+        return True, '', True
 
     version = ''
     try:

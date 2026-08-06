@@ -45,6 +45,7 @@ TABLE = {
     '目录不存在：{path}': 'Directory does not exist: {path}',
     '文件不存在：{path}（留空可使用系统默认播放器）': 'File does not exist: {path} (leave empty for the system default player)',
     '已取消': 'Cancelled',
+    'tap 刷新失败，可能不是最新版本': 'Failed to refresh the tap — may not be the latest version',
     '提示：Warp 需开启 Mouse Reporting（菜单 View → Toggle Mouse Reporting）才能点击菜单': 'Note: enable Mouse Reporting in Warp (View → Toggle Mouse Reporting) to click the menu',
     '提示：当前终端不支持鼠标点击，请用方向键选择（或换 iTerm2/Warp）': 'Note: this terminal does not support mouse clicks — use the arrow keys (or switch to iTerm2/Warp)',
     '语言': 'Language',

@@ -490,9 +490,11 @@ class UpdateCommand(unittest.TestCase):
         run.assert_not_called()
 
     def test_run_brew_upgrade_success(self):
-        """升级成功：退出码 0 且输出无 up-to-date → 从 brew list 取新版本"""
+        """升级成功：先刷新 tap，退出码 0 且无 up-to-date → 取新版本"""
         with mock.patch.object(updater.subprocess, 'run') as run:
             run.side_effect = [
+                mock.Mock(returncode=0, stdout='/tmp/tap', stderr=''),
+                mock.Mock(returncode=0, stdout='Already up to date.', stderr=''),
                 mock.Mock(returncode=0, stdout='==> Upgrading kuraya\n',
                           stderr=''),
                 mock.Mock(returncode=0, stdout='kuraya 0.4.0\n', stderr=''),
@@ -502,9 +504,13 @@ class UpdateCommand(unittest.TestCase):
 
     def test_run_brew_upgrade_already_latest(self):
         with mock.patch.object(updater.subprocess, 'run') as run:
-            run.return_value = mock.Mock(
-                returncode=0, stdout='kuraya 0.4.0 already up-to-date\n',
-                stderr='')
+            run.side_effect = [
+                mock.Mock(returncode=0, stdout='/tmp/tap', stderr=''),
+                mock.Mock(returncode=0, stdout='Already up to date.', stderr=''),
+                mock.Mock(returncode=0,
+                          stdout='kuraya 0.4.0 already up-to-date\n',
+                          stderr=''),
+            ]
             self.assertEqual(updater._run_brew_upgrade(),
                              (True, '', True))
 
@@ -594,19 +600,19 @@ class Show(unittest.TestCase):
 
 
 class BrewUpgrade(unittest.TestCase):
-    """brew 分支：索引过期时先刷新再重试，避免「已是最新」误报"""
+    """brew 分支：每次升级前无条件刷新 tap（防 formula 停旧版装旧版），
+    已是最新用新旧 brew 措辞判定"""
 
-    def run_upgrade(self, outcomes):
+    def run_upgrade(self, outcomes, quiet=True):
         with mock.patch.object(updater.subprocess, 'run',
                                side_effect=outcomes) as run:
-            result = updater._run_brew_upgrade()
+            result = updater._run_brew_upgrade(quiet=quiet)
         return result, run
 
-    def test_up_to_date_triggers_tap_refresh(self):
-        """up-to-date 后 git pull 刷新 tap 索引再重试，第二次有新版本则升级"""
+    def test_tap_refreshed_before_upgrade(self):
+        """每次升级先 git pull 刷新 tap（formula 停在旧版时直接 upgrade
+        会「成功」升到旧版，永远追不上最新），刷新失败也继续尝试"""
         outcomes = [
-            mock.Mock(returncode=0,
-                      stdout='kuraya 0.5.11 already up-to-date.', stderr=''),
             mock.Mock(returncode=0, stdout='/opt/homebrew/Library/Taps/'
                                            'tenngoxars/homebrew-tap', stderr=''),
             mock.Mock(returncode=0, stdout='Already up to date.', stderr=''),
@@ -618,32 +624,39 @@ class BrewUpgrade(unittest.TestCase):
         self.assertEqual(version, '0.5.12')
         self.assertFalse(already)
         calls = [c.args[0] for c in run.call_args_list]
-        self.assertEqual(calls[0][:2], ['brew', 'upgrade'])
-        self.assertEqual(calls[1][:2], ['brew', '--repository'])
-        self.assertEqual(calls[1][2], updater.TAP)
-        self.assertEqual(calls[2][:2], ['git', '-C'])
-        self.assertEqual(calls[3][:2], ['brew', 'upgrade'])
-        self.assertEqual(calls[4][:2], ['brew', 'list'])
+        self.assertEqual(calls[0][:2], ['brew', '--repository'])
+        self.assertEqual(calls[0][2], updater.TAP)
+        self.assertEqual(calls[1][:2], ['git', '-C'])
+        self.assertEqual(calls[2][:2], ['brew', 'upgrade'])
+        self.assertEqual(calls[3][:2], ['brew', 'list'])
+
+    def test_tap_refresh_failure_still_upgrades(self):
+        """tap 刷新失败（网络等）不阻断升级尝试"""
+        outcomes = [
+            mock.Mock(returncode=0, stdout='', stderr=''),   # --repository 空
+            mock.Mock(returncode=0, stdout='', stderr=''),   # upgrade
+            mock.Mock(returncode=0, stdout='kuraya 0.5.12', stderr=''),
+        ]
+        (ok, version, already), _ = self.run_upgrade(outcomes)
+        self.assertTrue(ok)
+        self.assertEqual(version, '0.5.12')
+        self.assertFalse(already)
 
     def test_upgrade_disables_auto_update(self):
         """upgrade 禁用 brew 自动更新（避免卡在 Updating Homebrew）"""
         outcomes = [
-            mock.Mock(returncode=0,
-                      stdout='kuraya 0.5.12 already up-to-date.', stderr=''),
             mock.Mock(returncode=0, stdout='/tmp/tap', stderr=''),
             mock.Mock(returncode=0, stdout='Already up to date.', stderr=''),
             mock.Mock(returncode=0,
                       stdout='kuraya 0.5.12 already up-to-date.', stderr=''),
         ]
         (_, _, _), run = self.run_upgrade(outcomes)
-        env = run.call_args_list[0].kwargs['env']
+        env = run.call_args_list[2].kwargs['env']  # 第三次调用是 upgrade
         self.assertEqual(env['HOMEBREW_NO_AUTO_UPDATE'], '1')
 
     def test_still_up_to_date_after_refresh(self):
         """刷新后仍 up-to-date 才是真的最新"""
         outcomes = [
-            mock.Mock(returncode=0,
-                      stdout='kuraya 0.5.12 already up-to-date.', stderr=''),
             mock.Mock(returncode=0, stdout='/tmp/tap', stderr=''),
             mock.Mock(returncode=0, stdout='Already up to date.', stderr=''),
             mock.Mock(returncode=0,
@@ -655,10 +668,48 @@ class BrewUpgrade(unittest.TestCase):
         self.assertTrue(already)
 
     def test_brew_missing_returns_failure(self):
-        (ok, version, already), _ = self.run_upgrade([OSError('no brew')])
+        """brew 不存在时 tap 刷新与 upgrade 都失败，返回失败"""
+        outcomes = [OSError('no brew'), OSError('no brew'), OSError('no brew')]
+        (ok, version, already), _ = self.run_upgrade(outcomes)
         self.assertFalse(ok)
         self.assertEqual(version, '')
         self.assertFalse(already)
+
+    def test_already_installed_wording(self):
+        """现代 brew 对已最新的输出是 Warning: ... already installed
+        （不含 up-to-date），同样按「已是最新」处理，不误报已更新"""
+        outcomes = [
+            mock.Mock(returncode=0, stdout='/tmp/tap', stderr=''),
+            mock.Mock(returncode=0, stdout='Already up to date.', stderr=''),
+            mock.Mock(returncode=0, stdout='Warning: '
+                       'tenngoxars/tap/kuraya 0.5.18 already installed',
+                       stderr=''),
+        ]
+        ok, version, already = self.run_upgrade(outcomes)[0]
+        self.assertTrue(ok)
+        self.assertEqual(version, '')
+        self.assertTrue(already)
+
+    def test_tap_refresh_failure_warns(self):
+        """tap 刷新失败时提示可能非最新（formula 停旧版会装旧版），
+        quiet 模式不输出"""
+        import io
+        from contextlib import redirect_stdout
+        outcomes = [
+            mock.Mock(returncode=0, stdout='', stderr=''),   # --repository 空
+            mock.Mock(returncode=0, stdout='', stderr=''),   # upgrade
+            mock.Mock(returncode=0, stdout='kuraya 0.5.12', stderr=''),
+        ]
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            (ok, version, _), _ = self.run_upgrade(outcomes, quiet=False)
+        self.assertTrue(ok)
+        self.assertIn('tap 刷新失败', buffer.getvalue())
+        # quiet 模式静默
+        buffer2 = io.StringIO()
+        with redirect_stdout(buffer2):
+            self.run_upgrade(outcomes)
+        self.assertEqual(buffer2.getvalue(), '')
 
 
 if __name__ == '__main__':

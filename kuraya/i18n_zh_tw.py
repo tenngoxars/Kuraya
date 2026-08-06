@@ -84,6 +84,7 @@ TABLE = {
     '已下载': '已下載',
     '已保存：{path}': '已儲存：{path}',
     '已取消': '已取消',
+    'tap 刷新失败，可能不是最新版本': 'tap 重新整理失敗，可能不是最新版本',
     '提示：Warp 需开启 Mouse Reporting（菜单 View → Toggle Mouse Reporting）才能点击菜单': '提示：Warp 需開啟 Mouse Reporting（選單 View → Toggle Mouse Reporting）才能點擊選單',
     '提示：当前终端不支持鼠标点击，请用方向键选择（或换 iTerm2/Warp）': '提示：目前終端不支援滑鼠點擊，請用方向鍵選擇（或改用 iTerm2/Warp）',
     '语言': '語言',

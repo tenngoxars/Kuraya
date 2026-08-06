@@ -71,7 +71,7 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
     """
     方向键导航 + 回车确认的选择器。options: [(key, label, desc)]。
     返回选中项的 key；Esc / EOF 返回 None。数字键仍是快捷方式；
-    终端支持鼠标报告时，点击未高亮项只移动高亮，再点一次已高亮项才选中。
+    终端支持鼠标报告时，悬停选项行即高亮，点击选项行直接执行该行。
     esc_label 描述 Esc 在此菜单的动作（主菜单为「退出」，子菜单为「返回」）。
     """
     from .keys import (enable_mouse, disable_mouse, query_cursor, read_key,
@@ -81,6 +81,9 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
     n = len(options)
     enable_mouse()
     status = terminal_mouse_status()
+    # 切到备用屏幕（vim/htop 同款）：Warp 等终端只对 alt-screen 应用
+    # 转发鼠标事件，普通屏幕下点击会被终端 UI 拦截
+    print('\x1b[?1049h', end='', flush=True)
     try:
         while True:
             # 整屏重绘期间隐藏光标：Windows cls 逐行重画时
@@ -103,7 +106,7 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
                     say(f'  {C.GREY}·{C.RESET} {C.GOLD}{key}{C.RESET}  {label}'
                         f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}')
             say()
-            hint = tr('↑↓ 选择 · 回车 确认 · 鼠标点击 · Esc {action}',
+            hint = tr('↑↓ 选择 · 回车 确认 · 悬停高亮 · 点击执行 · Esc {action}',
                       action=esc_label)
             # 完整换行输出：光标落在下一行行首，不悬停在行尾
             # （悬停会让终端/Warp 把提示行当输入块，方向键被拦截）
@@ -122,31 +125,38 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
                               '选择（或换 iTerm2/Warp）')
                 print(f'  {C.FAINT}{warn}{C.RESET}')
                 _mouse_hint_shown = True
-            key = read_key()
-            if isinstance(key, tuple) and key[0] == 'click':
-                if cursor:
+            while True:
+                # 内层读键循环：悬停在同一选项行内不重绘（1003 事件流
+                # 很密，全屏重绘会闪）；跨行/按键才回到外层重绘
+                key = read_key()
+                if isinstance(key, tuple):
+                    if not cursor:
+                        continue
                     _, _, row = key
                     hit = row - cursor[0] + n + 2
+                    if key[0] == 'hover':
+                        if 0 <= hit < n and hit != selected:
+                            selected = hit
+                            break
+                        continue
                     if 0 <= hit < n:
-                        # 第一次点击移动高亮，再点一次已高亮项才执行
-                        if hit == selected:
-                            return options[hit][0]
-                        selected = hit
-                continue
-            if key == 'up':
-                selected = (selected - 1) % n
-            elif key == 'down':
-                selected = (selected + 1) % n
-            elif key in ('enter', ''):
-                return options[selected][0]
-            elif key in ('esc', 'eof'):
-                return None
-            elif key.isdigit():
-                for k, _, _ in options:
-                    if k == key:
-                        return k
+                        return options[hit][0]  # 点击执行目标行
+                    continue
+                if key in ('up', 'down'):
+                    selected = (selected - 1 if key == 'up'
+                                else selected + 1) % n
+                    break
+                if key in ('enter', ''):
+                    return options[selected][0]
+                if key in ('esc', 'eof'):
+                    return None
+                if key.isdigit():
+                    for k, _, _ in options:
+                        if k == key:
+                            return k
     finally:
         disable_mouse()
+        print('\x1b[?1049l', end='', flush=True)
 
 
 def draw_header(library, source):
@@ -218,12 +228,15 @@ def language_label(code):
 
 
 def pause():
-    """回车、Esc 或鼠标点击任意处返回菜单"""
+    """回车、Esc 或鼠标点击任意处返回菜单（悬停移动不退出）"""
     from .keys import disable_mouse, enable_mouse, read_key
     print(f'\n  {C.FAINT}{tr("按回车或点击鼠标返回菜单")}{C.RESET}')
     enable_mouse()
     try:
-        read_key()
+        while True:
+            key = read_key()
+            if not isinstance(key, tuple) or key[0] != 'hover':
+                return
     finally:
         disable_mouse()
 

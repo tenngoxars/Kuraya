@@ -439,30 +439,37 @@ def offer_open_library(library, opts=None):
             print(f'  {mark}{C.RESET}  {style}{label}{C.RESET}'
                   f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}'
                   f'\x1b[K')
-        print(f'  {C.FAINT}{tr("↑↓ 选择 · 回车 确认 · 鼠标点击 · Esc 跳过")}'
+        print(f'  {C.FAINT}{tr("↑↓ 选择 · 回车 确认 · 悬停高亮 · 点击执行 · Esc 跳过")}'
               f'{C.RESET}\x1b[K')
 
     say()
-    render()
     keys.enable_mouse()
+    # 切到备用屏幕再渲染首帧：Warp 等终端只对 alt-screen 转发鼠标
+    # 事件；退出时恢复主屏，刮削结果卡片重新可见
+    print('\x1b[?1049h', end='', flush=True)
+    render()
     try:
         while True:
             cursor = keys.query_cursor()
             key = keys.read_key()
+            if isinstance(key, tuple) and key[0] == 'hover':
+                if cursor:
+                    # 选项 i 所在行 = 光标行 - 3 + i（空行、另一选项、提示行在前）
+                    hit = key[2] - cursor[0] + 3
+                    if 0 <= hit < len(choices) and hit != selected:
+                        selected = hit
+                        sys.stdout.write(f'\x1b[{height}A')
+                        render()
+                continue
             if isinstance(key, tuple) and key[0] == 'click':
                 if not cursor:
                     continue
-                # 选项 i 所在行 = 光标行 - 3 + i（空行、另一选项、提示行在前）
                 hit = key[2] - cursor[0] + 3
                 if 0 <= hit < len(choices):
-                    # 第一次点击移动高亮，再点一次已高亮项才执行
-                    if hit == selected:
-                        if hit == 0:
-                            open_library(library)
-                        return True
-                    selected = hit
-                else:
-                    continue
+                    if hit == 0:
+                        open_library(library)
+                    return True
+                continue
             elif key == 'up':
                 selected = (selected - 1) % len(choices)
             elif key == 'down':
@@ -479,6 +486,7 @@ def offer_open_library(library, opts=None):
             render()
     finally:
         keys.disable_mouse()
+        print('\x1b[?1049l', end='', flush=True)
 
 
 def cmd_rebuild(library):

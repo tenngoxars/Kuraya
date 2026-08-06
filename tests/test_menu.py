@@ -29,36 +29,79 @@ def run_loop(keys_seq, cursor=(17, 1)):
 
 
 class ClickSelection(unittest.TestCase):
-    """点击先高亮、再点一次已高亮项才执行；方向键/数字键不受影响"""
+    """悬停高亮、点击执行；方向键/数字键不受影响"""
 
-    def click_row(self, row):
+    def row(self, r):
         """n=3、光标行 17 时选项 0/1/2 所在行 = 12/13/14"""
-        return ('click', 5, row)
+        return r
 
-    def test_click_highlights_first(self):
-        """第一次点击未高亮项只移动高亮不执行；回车确认的是新高亮项"""
-        self.assertEqual(run_loop([self.click_row(13), 'enter']), '2')
+    def hover(self, r):
+        return ('hover', 5, r)
 
-    def test_second_click_executes(self):
-        """再点一次已高亮项才执行"""
-        self.assertEqual(run_loop([self.click_row(13), self.click_row(13)]), '2')
+    def click(self, r):
+        return ('click', 5, r)
 
-    def test_click_other_option_switches(self):
-        """先点 B 高亮，再点 C 则高亮切到 C"""
+    def test_hover_highlights_then_enter_confirms(self):
+        """悬停到选项 B 高亮（不执行），回车确认的是 B"""
+        self.assertEqual(run_loop([self.hover(13), 'enter']), '2')
+
+    def test_hover_switches_between_options(self):
+        """悬停 B 再悬停 C，高亮跟随；回车确认 C"""
         self.assertEqual(
-            run_loop([self.click_row(13), self.click_row(14), 'enter']), '3')
+            run_loop([self.hover(13), self.hover(14), 'enter']), '3')
 
-    def test_click_highlighted_option_executes(self):
-        """选项 0 初始已高亮，第一次点击即确认（点已高亮项 = 再点一次）"""
-        self.assertEqual(run_loop([self.click_row(12)]), '1')
+    def test_click_executes_target_row(self):
+        """点击选项行直接执行该行（悬停已提供高亮反馈）"""
+        self.assertEqual(run_loop([self.click(13)]), '2')
+
+    def test_hover_same_row_no_effect(self):
+        """悬停当前已高亮行不改变状态，回车仍确认原选项"""
+        self.assertEqual(run_loop([self.hover(12), 'enter']), '1')
+
+    def test_hover_same_row_does_not_redraw(self):
+        """同行使内移动不触发重绘（1003 事件流很密，全屏重绘会闪）"""
+        read = mock.Mock(side_effect=[self.hover(12), self.hover(12), 'enter'])
+        with mock.patch.object(menu, 'clear_screen') as clear, \
+             mock.patch.object(menu, 'brand'), \
+             mock.patch.object(menu, 'rule'), \
+             mock.patch.object(menu, 'say'), \
+             mock.patch('kuraya.keys.query_cursor', return_value=(17, 1)), \
+             mock.patch('kuraya.keys.read_key', read), \
+             mock.patch('kuraya.keys.enable_mouse'), \
+             mock.patch('kuraya.keys.disable_mouse'):
+            result = menu.menu_loop(lambda: None, OPTIONS)
+        self.assertEqual(result, '1')
+        # 三次 read_key 均在第一次渲染后：同行使内 hover 未触发重绘
+        self.assertEqual(clear.call_count, 1)
+
+    def test_alt_screen_entered_and_restored(self):
+        """菜单进入备用屏幕（鼠标转发），退出恢复主屏"""
+        import io
+        from contextlib import redirect_stdout
+        buffer = io.StringIO()
+        with mock.patch.object(menu, 'clear_screen'), \
+             mock.patch.object(menu, 'brand'), \
+             mock.patch.object(menu, 'rule'), \
+             mock.patch.object(menu, 'say'), \
+             mock.patch('kuraya.keys.query_cursor', return_value=(17, 1)), \
+             mock.patch('kuraya.keys.read_key', return_value='enter'), \
+             mock.patch('kuraya.keys.enable_mouse'), \
+             mock.patch('kuraya.keys.disable_mouse'), \
+             redirect_stdout(buffer):
+            menu.menu_loop(lambda: None, OPTIONS)
+        out = buffer.getvalue()
+        self.assertIn('\x1b[?1049h', out)
+        self.assertIn('\x1b[?1049l', out)
+        self.assertLess(out.index('\x1b[?1049h'),
+                        out.index('\x1b[?1049l'))
 
     def test_click_blank_row_ignored(self):
         """点击选项区之外（如顶部行）忽略，继续等待按键"""
-        self.assertEqual(run_loop([('click', 5, 5), '2']), '2')
+        self.assertEqual(run_loop([self.click(5), '2']), '2')
 
-    def test_click_without_cursor_ignored(self):
-        """终端不支持光标查询时点击无法定位，忽略"""
-        self.assertEqual(run_loop([('click', 5, 13), '2'], cursor=None), '2')
+    def test_hover_without_cursor_ignored(self):
+        """终端不支持光标查询时悬停/点击无法定位，忽略"""
+        self.assertEqual(run_loop([self.hover(13), '2'], cursor=None), '2')
 
     def test_arrows_still_work(self):
         self.assertEqual(run_loop(['down', 'enter']), '2')

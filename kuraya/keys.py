@@ -19,11 +19,12 @@ if os.name != 'nt':
     import tty
     import time
 
-# VT 鼠标报告：启用后终端把点击以 SGR 序列（\x1b[<b;x;yM）发到输入流。
-# 仅现代终端支持（Windows Terminal / iTerm2 / xterm 等）；旧 conhost 忽略，
-# 点击无效但方向键照常。
-MOUSE_ENABLE = '\x1b[?1000h\x1b[?1006h'
-MOUSE_DISABLE = '\x1b[?1000l\x1b[?1006l'
+# VT 鼠标报告：1003（all motion）让终端把移动与点击都以 SGR 序列
+# （\x1b[<b;x;yM）发到输入流——移动事件（btn 32-35）用于悬停高亮，
+# 按下事件用于点击执行。仅现代终端支持（Windows Terminal / iTerm2 /
+# xterm 等）；旧 conhost 忽略，点击无效但方向键照常。
+MOUSE_ENABLE = '\x1b[?1003h\x1b[?1006h'
+MOUSE_DISABLE = '\x1b[?1003l\x1b[?1006l'
 
 _mouse_depth = 0  # 菜单嵌套时引用计数，最外层退出才真正关闭
 _win_stdin_mode = None  # Windows 原始 stdin 控制台模式，退出时恢复
@@ -163,9 +164,22 @@ def _parse_cpr(buf):
 
 
 def _parse_mouse(seq):
-    """SGR 鼠标序列 [<b;x;yM/m → ('click', 列, 行)"""
+    """
+    SGR 鼠标序列 [<b;x;yM：
+      btn 32-35（移动/拖动）→ ('hover', 列, 行)
+      btn 0-1（左/中键按下）→ ('click', 列, 行)
+      btn 2（右键按下）、3-5（释放）、64-67（滚轮）、
+      修饰键组合（128+）→ None（忽略）
+    """
     m = re.match(rb'\[<(\d+);(\d+);(\d+)[Mm]', seq)
-    return ('click', int(m.group(2)), int(m.group(3))) if m else None
+    if not m:
+        return None
+    btn, col, row = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if 32 <= btn <= 35:
+        return ('hover', col, row)
+    if btn in (0, 1):
+        return ('click', col, row)
+    return None
 
 
 def read_key():
@@ -173,7 +187,7 @@ def read_key():
     读取单个按键。返回：
       'esc' / 'enter' / 'backspace' / 'eof' / '?'（无法识别）
       普通字符（'0'-'9'、'y'、'n' 等）
-      鼠标点击（启用鼠标报告后）：('click', 列, 行)
+      鼠标（启用鼠标报告后）：('click', 列, 行) 按下 / ('hover', 列, 行) 移动
     Ctrl+C 抛 KeyboardInterrupt。
     """
     if os.name == 'nt':

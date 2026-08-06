@@ -294,8 +294,19 @@ class OfferOpenLibrary(unittest.TestCase):
         self.assertIn('稍后再说', out)          # 第二项存在
         opened.assert_not_called()
 
-    def test_click_highlighted_option_opens(self):
-        """选项 0 初始已高亮（第 7 行），点击即确认打开"""
+    def test_hover_highlights_then_enter_confirms(self):
+        """悬停选项 0（第 7 行）高亮不执行，回车确认打开"""
+        opened = mock.Mock()
+        with mock.patch('kuraya.keys.read_key',
+                        side_effect=[('hover', 5, 7), 'enter']), \
+             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
+             mock.patch.object(launcher, 'open_library', opened):
+            offered = launcher.offer_open_library(Path('lib'))
+        self.assertTrue(offered)
+        opened.assert_called_once()
+
+    def test_click_opens_library(self):
+        """点击选项 0（第 7 行）直接打开"""
         opened = mock.Mock()
         with mock.patch('kuraya.keys.read_key',
                         return_value=('click', 5, 7)), \
@@ -305,23 +316,39 @@ class OfferOpenLibrary(unittest.TestCase):
         self.assertTrue(offered)
         opened.assert_called_once()
 
-    def test_click_unhighlighted_once_does_not_confirm(self):
-        """点一次未高亮项（选项 1，第 8 行）只移动高亮，必须再点/回车确认"""
+    def test_hover_moves_selection(self):
+        """悬停选项 1（第 8 行）后回车确认的是选项 1（跳过不打开）；
+        旧实现悬停事件被忽略，回车会确认默认的选项 0（打开）——判别新旧"""
         opened = mock.Mock()
-        read = mock.Mock(side_effect=[('click', 5, 8), 'esc'])
-        with mock.patch('kuraya.keys.read_key', read), \
+        with mock.patch('kuraya.keys.read_key',
+                        side_effect=[('hover', 5, 8), 'enter']), \
              mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
              mock.patch.object(launcher, 'open_library', opened):
             offered = launcher.offer_open_library(Path('lib'))
         self.assertTrue(offered)
         opened.assert_not_called()
-        read.assert_has_calls([mock.call(), mock.call()])  # 点击未执行，继续等键
 
-    def test_click_unhighlighted_twice_confirms(self):
-        """点未高亮项两次：第一次高亮，第二次确认（选项 1 = 跳过不打开）"""
+    def test_alt_screen_entered_and_restored(self):
+        """选择器在备用屏幕渲染（Warp 鼠标转发），退出恢复主屏"""
+        import io
+        from contextlib import redirect_stdout
+        buffer = io.StringIO()
+        with mock.patch('kuraya.keys.read_key', return_value='esc'), \
+             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
+             mock.patch.object(launcher, 'open_library'), \
+             redirect_stdout(buffer):
+            launcher.offer_open_library(Path('lib'))
+        out = buffer.getvalue()
+        self.assertIn('\x1b[?1049h', out)
+        self.assertIn('\x1b[?1049l', out)
+        # 首帧必须渲染在 alt-screen 内（先切屏后渲染），否则用户看到空屏
+        self.assertGreater(out.index('稍后再说'), out.index('\x1b[?1049h'))
+
+    def test_click_later_skips(self):
+        """点击选项 1（第 8 行）跳过不打开"""
         opened = mock.Mock()
         with mock.patch('kuraya.keys.read_key',
-                        side_effect=[('click', 5, 8), ('click', 5, 8)]), \
+                        return_value=('click', 5, 8)), \
              mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
              mock.patch.object(launcher, 'open_library', opened):
             offered = launcher.offer_open_library(Path('lib'))

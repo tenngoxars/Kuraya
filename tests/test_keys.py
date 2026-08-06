@@ -89,10 +89,24 @@ class ReadKeyPosix(unittest.TestCase):
         self.assertEqual(self.key(b'\x1b', b'[<0;10;5M'),
                          ('click', 10, 5))
 
-    def test_mouse_release_event(self):
-        """释放事件（m 结尾）同样携带坐标，按点击处理"""
-        self.assertEqual(self.key(b'\x1b', b'[<3;20;8m'),
-                         ('click', 20, 8))
+    def test_mouse_release_event_ignored(self):
+        """释放事件（btn|3，m 结尾）忽略，点击以按下为准"""
+        self.assertEqual(self.key(b'\x1b', b'[<3;20;8m'), '?')
+
+    def test_mouse_move_event(self):
+        """移动事件（btn=35）解析为 hover 坐标"""
+        self.assertEqual(self.key(b'\x1b', b'[<35;15;6M'),
+                         ('hover', 15, 6))
+
+    def test_scroll_wheel_ignored(self):
+        """滚轮事件（btn 64-67）不应误判为 hover"""
+        self.assertEqual(self.key(b'\x1b', b'[<64;15;6M'), '?')
+        self.assertEqual(self.key(b'\x1b', b'[<65;15;6M'), '?')
+
+    def test_right_click_ignored(self):
+        """右键按下（btn=2）与修饰键组合不触发菜单"""
+        self.assertEqual(self.key(b'\x1b', b'[<2;15;6M'), '?')
+        self.assertEqual(self.key(b'\x1b', b'[<128;15;6M'), '?')
 
     def test_malformed_mouse_sequence(self):
         self.assertEqual(self.key(b'\x1b', b'[<xx'), '?')

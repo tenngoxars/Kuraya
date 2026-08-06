@@ -332,6 +332,9 @@ def run():
         if choice is None or choice == '0':
             return 0
         if choice == '1':
+            # menu_loop 已退出备用屏幕，主屏还停在运行前的内容上；
+            # 先清屏再执行，让刮削/重建的输出从干净起点开始
+            clear_screen()
             say()
             _, offered = launcher.cmd_all(library, source)
             launcher.spin.stop()
@@ -339,17 +342,20 @@ def run():
             if not offered:
                 pause()
         elif choice == '2':
+            clear_screen()
             say()
             launcher.cmd_rebuild(library)
             launcher.spin.stop()
             pause()
         elif choice == '3':
+            clear_screen()
             say()
             launcher.open_library(library)
             pause()
         elif choice == '4':
             settings_menu()
         elif choice == '5':
+            clear_screen()
             say()
             updater.update()
             pause()

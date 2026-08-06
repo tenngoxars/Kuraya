@@ -6,6 +6,7 @@
 """
 import contextlib
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from kuraya import i18n as _i18n
@@ -93,6 +94,73 @@ class KeyboardSelection(unittest.TestCase):
         """整屏重绘期间隐藏光标，渲染完恢复（消除 Windows 重绘闪烁）"""
         with loop_io(['enter']) as (result, out, clear, qc):
             self.assertLess(out.index('\x1b[?25l'), out.index('\x1b[?25h'))
+
+
+class RunExecBranches(unittest.TestCase):
+    """主循环执行分支：退出备用屏幕后先清屏再执行，输出不从旧内容继续"""
+
+    def setUp(self):
+        import tempfile
+        from kuraya import settings as s
+        self.dir = tempfile.mkdtemp()
+        self.patchers = [
+            mock.patch.object(s, 'SETTINGS_FILE',
+                              Path(self.dir) / '设置.ini'),
+            mock.patch.object(s, 'APP_DIR', Path(self.dir)),
+        ]
+        import configparser
+        cfg = configparser.ConfigParser()
+        cfg['路径'] = {'影片库目录': self.dir,
+                       '待整理目录': f'{self.dir}/待整理', '播放器': ''}
+        with open(f'{self.dir}/设置.ini', 'w') as fp:
+            cfg.write(fp)
+        for p in self.patchers:
+            p.start()
+        self.addCleanup(mock.patch.stopall)
+
+    def test_rebuild_clears_before_exec(self):
+        """选 2 重建页面：分支清屏在 cmd_rebuild 之前。
+        判别性：进入菜单的 draw_all 已清 1 次，分支再清才是 2 次——
+        旧代码（无分支清屏）rebuild 前只有 1 次 clear，此断言必失败"""
+        order = []
+        with mock.patch('kuraya.keys.read_key', side_effect=['2', 'esc']), \
+             mock.patch.object(menu, 'clear_screen',
+                               side_effect=lambda: order.append('clear')), \
+             mock.patch.object(menu.launcher, 'cmd_rebuild',
+                               side_effect=lambda lib: order.append('rebuild')), \
+             mock.patch.object(menu.launcher, 'spin'), \
+             mock.patch('kuraya.updater.text', return_value=''), \
+             mock.patch.object(menu, 'pause'):
+            menu.run()
+        # rebuild 之前：draw_all 清 1 次 + 分支清 1 次 = 2
+        self.assertGreaterEqual(order.index('rebuild'), 2)
+
+    def test_scrape_clears_before_exec(self):
+        """选 1 刮削入库：分支清屏在 cmd_all 之前（判别性同上）"""
+        order = []
+        with mock.patch('kuraya.keys.read_key', side_effect=['1', 'esc']), \
+             mock.patch.object(menu, 'clear_screen',
+                               side_effect=lambda: order.append('clear')), \
+             mock.patch.object(menu.launcher, 'cmd_all',
+                               side_effect=lambda lib, src, opts=None:
+                                   order.append('cmd_all') or
+                                   ({'done': 0, 'failed': 0}, False)), \
+             mock.patch.object(menu.launcher, 'spin'), \
+             mock.patch('kuraya.updater.text', return_value=''), \
+             mock.patch.object(menu, 'pause'):
+            menu.run()
+        self.assertGreaterEqual(order.index('cmd_all'), 2)
+
+    def test_settings_branch_no_extra_clear(self):
+        """选 4 设置：走备用屏幕，执行分支不额外清屏。
+        清屏只来自两次菜单重绘（draw_all），共 2 次"""
+        with mock.patch('kuraya.keys.read_key',
+                        side_effect=['4', 'esc', 'esc']), \
+             mock.patch.object(menu, 'clear_screen') as clear, \
+             mock.patch('kuraya.updater.text', return_value=''), \
+             mock.patch.object(menu, 'settings_menu'):
+            menu.run()
+        self.assertEqual(clear.call_count, 2)
 
 
 if __name__ == '__main__':

@@ -331,12 +331,23 @@ def _run_brew_upgrade():
             return None
 
     def tap_update():
+        """刷新 kuraya 所在 tap：brew tap-update 各版本命令集不同，
+        直接 git pull tap 仓库目录，所有版本通用"""
         try:
-            return subprocess.run(['brew', 'tap-update', TAP],
+            repo = subprocess.run(['brew', '--repository', TAP],
+                                  capture_output=True, text=True,
+                                  timeout=30)
+            if repo.returncode != 0:
+                return False
+            path = repo.stdout.strip()
+            if not path:
+                return False
+            pull = subprocess.run(['git', '-C', path, 'pull'],
                                   capture_output=True, text=True,
                                   timeout=120)
+            return pull.returncode == 0
         except (OSError, subprocess.TimeoutExpired):
-            return None
+            return False
 
     result = upgrade()
     if result is None:
@@ -344,8 +355,8 @@ def _run_brew_upgrade():
     output = (result.stdout or '') + (result.stderr or '')
     if result.returncode == 0 and 'up-to-date' in output:
         # 本地 formula 索引可能没跟上发版：只刷新 kuraya 的 tap 再重试
-        tap_update()
-        result = upgrade()
+        if tap_update():
+            result = upgrade()
         if result is None:
             return False, '', False
         output = (result.stdout or '') + (result.stderr or '')

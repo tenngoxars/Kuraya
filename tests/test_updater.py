@@ -603,11 +603,13 @@ class BrewUpgrade(unittest.TestCase):
         return result, run
 
     def test_up_to_date_triggers_tap_refresh(self):
-        """up-to-date 后 tap-update 刷新索引再重试，第二次有新版本则升级"""
+        """up-to-date 后 git pull 刷新 tap 索引再重试，第二次有新版本则升级"""
         outcomes = [
             mock.Mock(returncode=0,
                       stdout='kuraya 0.5.11 already up-to-date.', stderr=''),
-            mock.Mock(returncode=0, stdout='Updated 1 tap.', stderr=''),
+            mock.Mock(returncode=0, stdout='/opt/homebrew/Library/Taps/'
+                                           'tenngoxars/homebrew-tap', stderr=''),
+            mock.Mock(returncode=0, stdout='Already up to date.', stderr=''),
             mock.Mock(returncode=0, stdout='', stderr=''),
             mock.Mock(returncode=0, stdout='kuraya 0.5.12', stderr=''),
         ]
@@ -617,17 +619,19 @@ class BrewUpgrade(unittest.TestCase):
         self.assertFalse(already)
         calls = [c.args[0] for c in run.call_args_list]
         self.assertEqual(calls[0][:2], ['brew', 'upgrade'])
-        self.assertEqual(calls[1][:2], ['brew', 'tap-update'])
+        self.assertEqual(calls[1][:2], ['brew', '--repository'])
         self.assertEqual(calls[1][2], updater.TAP)
-        self.assertEqual(calls[2][:2], ['brew', 'upgrade'])
-        self.assertEqual(calls[3][:2], ['brew', 'list'])
+        self.assertEqual(calls[2][:2], ['git', '-C'])
+        self.assertEqual(calls[3][:2], ['brew', 'upgrade'])
+        self.assertEqual(calls[4][:2], ['brew', 'list'])
 
     def test_upgrade_disables_auto_update(self):
         """upgrade 禁用 brew 自动更新（避免卡在 Updating Homebrew）"""
         outcomes = [
             mock.Mock(returncode=0,
                       stdout='kuraya 0.5.12 already up-to-date.', stderr=''),
-            mock.Mock(returncode=0, stdout='Updated 1 tap.', stderr=''),
+            mock.Mock(returncode=0, stdout='/tmp/tap', stderr=''),
+            mock.Mock(returncode=0, stdout='Already up to date.', stderr=''),
             mock.Mock(returncode=0,
                       stdout='kuraya 0.5.12 already up-to-date.', stderr=''),
         ]
@@ -640,7 +644,8 @@ class BrewUpgrade(unittest.TestCase):
         outcomes = [
             mock.Mock(returncode=0,
                       stdout='kuraya 0.5.12 already up-to-date.', stderr=''),
-            mock.Mock(returncode=0, stdout='Updated 1 tap.', stderr=''),
+            mock.Mock(returncode=0, stdout='/tmp/tap', stderr=''),
+            mock.Mock(returncode=0, stdout='Already up to date.', stderr=''),
             mock.Mock(returncode=0,
                       stdout='kuraya 0.5.12 already up-to-date.', stderr=''),
         ]

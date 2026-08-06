@@ -293,8 +293,8 @@ class OfferOpenLibrary(unittest.TestCase):
         self.assertIn('稍后再说', out)          # 第二项存在
         opened.assert_not_called()
 
-    def test_alt_screen_entered_and_restored(self):
-        """选择器在备用屏幕渲染，退出恢复主屏"""
+    def test_stays_on_main_screen(self):
+        """选择器留在主屏渲染（不进备用屏幕），刮削结果卡片保持可见"""
         import io
         from contextlib import redirect_stdout
         buffer = io.StringIO()
@@ -303,10 +303,7 @@ class OfferOpenLibrary(unittest.TestCase):
              redirect_stdout(buffer):
             launcher.offer_open_library(Path('lib'))
         out = buffer.getvalue()
-        self.assertIn('\x1b[?1049h', out)
-        self.assertIn('\x1b[?1049l', out)
-        # 首帧必须渲染在 alt-screen 内（先切屏后渲染），否则用户看到空屏
-        self.assertGreater(out.index('稍后再说'), out.index('\x1b[?1049h'))
+        self.assertNotIn('\x1b[?1049', out)  # 判别性：进备用屏幕会藏起主屏内容
 
     def test_quiet_skips_prompt(self):
         read, opened, offered = self.run_all(quiet=True)

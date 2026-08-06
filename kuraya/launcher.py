@@ -443,28 +443,24 @@ def offer_open_library(library, opts=None):
               f'{C.RESET}\x1b[K')
 
     say()
-    # 切到备用屏幕再渲染首帧；退出时恢复主屏，刮削结果卡片重新可见
-    print('\x1b[?1049h', end='', flush=True)
+    # 留在主屏渲染：上方是刮削结果卡片，选择器只画底部两行
     render()
-    try:
-        while True:
-            key = read_key()
-            if key == 'up':
-                selected = (selected - 1) % len(choices)
-            elif key == 'down':
-                selected = (selected + 1) % len(choices)
-            elif key in ('enter', ''):
-                if selected == 0:
-                    open_library(library)
-                return True
-            elif key in ('esc', 'eof', 'backspace', '?'):
-                return True
-            else:
-                continue
-            sys.stdout.write(f'\x1b[{height}A')
-            render()
-    finally:
-        print('\x1b[?1049l', end='', flush=True)
+    while True:
+        key = read_key()
+        if key == 'up':
+            selected = (selected - 1) % len(choices)
+        elif key == 'down':
+            selected = (selected + 1) % len(choices)
+        elif key in ('enter', ''):
+            if selected == 0:
+                open_library(library)
+            return True
+        elif key in ('esc', 'eof', 'backspace', '?'):
+            return True
+        else:
+            continue
+        sys.stdout.write(f'\x1b[{height}A')
+        render()
 
 
 def cmd_rebuild(library):

@@ -29,17 +29,28 @@ def run_loop(keys_seq, cursor=(17, 1)):
 
 
 class ClickSelection(unittest.TestCase):
-    """点击选项行直接选中；方向键/数字键不受影响"""
+    """点击先高亮、再点一次已高亮项才执行；方向键/数字键不受影响"""
 
-    def test_click_first_option(self):
-        """n=3 时选项 0 所在行 = 光标行 17 - 3 - 2 + 0 = 12"""
-        self.assertEqual(run_loop([('click', 5, 12)]), '1')
+    def click_row(self, row):
+        """n=3、光标行 17 时选项 0/1/2 所在行 = 12/13/14"""
+        return ('click', 5, row)
 
-    def test_click_middle_option(self):
-        self.assertEqual(run_loop([('click', 5, 13)]), '2')
+    def test_click_highlights_first(self):
+        """第一次点击未高亮项只移动高亮不执行；回车确认的是新高亮项"""
+        self.assertEqual(run_loop([self.click_row(13), 'enter']), '2')
 
-    def test_click_last_option(self):
-        self.assertEqual(run_loop([('click', 5, 14)]), '3')
+    def test_second_click_executes(self):
+        """再点一次已高亮项才执行"""
+        self.assertEqual(run_loop([self.click_row(13), self.click_row(13)]), '2')
+
+    def test_click_other_option_switches(self):
+        """先点 B 高亮，再点 C 则高亮切到 C"""
+        self.assertEqual(
+            run_loop([self.click_row(13), self.click_row(14), 'enter']), '3')
+
+    def test_click_highlighted_option_executes(self):
+        """选项 0 初始已高亮，第一次点击即确认（点已高亮项 = 再点一次）"""
+        self.assertEqual(run_loop([self.click_row(12)]), '1')
 
     def test_click_blank_row_ignored(self):
         """点击选项区之外（如顶部行）忽略，继续等待按键"""

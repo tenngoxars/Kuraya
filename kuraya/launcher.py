@@ -450,15 +450,20 @@ def offer_open_library(library, opts=None):
             cursor = keys.query_cursor()
             key = keys.read_key()
             if isinstance(key, tuple) and key[0] == 'click':
-                if cursor:
-                    # 选项 i 所在行 = 光标行 - 3 + i（空行、另一选项、提示行在前）
-                    hit = key[2] - cursor[0] + 3
-                    if 0 <= hit < len(choices):
+                if not cursor:
+                    continue
+                # 选项 i 所在行 = 光标行 - 3 + i（空行、另一选项、提示行在前）
+                hit = key[2] - cursor[0] + 3
+                if 0 <= hit < len(choices):
+                    # 第一次点击移动高亮，再点一次已高亮项才执行
+                    if hit == selected:
                         if hit == 0:
                             open_library(library)
                         return True
-                continue
-            if key == 'up':
+                    selected = hit
+                else:
+                    continue
+            elif key == 'up':
                 selected = (selected - 1) % len(choices)
             elif key == 'down':
                 selected = (selected + 1) % len(choices)

@@ -71,7 +71,7 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
     """
     方向键导航 + 回车确认的选择器。options: [(key, label, desc)]。
     返回选中项的 key；Esc / EOF 返回 None。数字键仍是快捷方式；
-    终端支持鼠标报告时，点击选项行直接选中。
+    终端支持鼠标报告时，点击未高亮项只移动高亮，再点一次已高亮项才选中。
     esc_label 描述 Esc 在此菜单的动作（主菜单为「退出」，子菜单为「返回」）。
     """
     from .keys import (enable_mouse, disable_mouse, query_cursor, read_key,
@@ -109,8 +109,8 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
             # （悬停会让终端/Warp 把提示行当输入块，方向键被拦截）
             print(f'  {C.FAINT}{hint}{C.RESET}')
             print('\x1b[?25h', end='', flush=True)
-            # 光标在提示行的下一行（print 换行后），选项 i 所在行 =
-            # 光标行 - 2(空行+提示行) - (n - 1 - i)，点击命中即选中
+            # 光标在提示行的下一行（print 换行后）；
+            # 选项 i 所在行 = 光标行 - n - 2 + i，点击坐标由此映射到选项
             cursor = query_cursor()
             # 终端鼠标提示放在光标查询之后输出，不影响点击行号映射
             if status != 'ok' and not _mouse_hint_shown:
@@ -128,7 +128,10 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
                     _, _, row = key
                     hit = row - cursor[0] + n + 2
                     if 0 <= hit < n:
-                        return options[hit][0]
+                        # 第一次点击移动高亮，再点一次已高亮项才执行
+                        if hit == selected:
+                            return options[hit][0]
+                        selected = hit
                 continue
             if key == 'up':
                 selected = (selected - 1) % n

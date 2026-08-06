@@ -97,6 +97,13 @@ const SORT_NAMES = {
 let sortKey = "date_desc";
 let activeActor = null;
 
+// 分批渲染：首屏只建 PAGE 张卡片，滚动接近底部时追加下一批，
+// 避免大库一次性构建数千 DOM 节点卡死主线程
+const PAGE = 60;
+const FULL_RENDER = !("IntersectionObserver" in window);
+let result = [];     // 当前筛选/排序结果：render 算一次、loadMore 复用
+let rendered = 0;
+
 // 每部影片拆分出参演女优名单（多人合集用「、」分隔）
 function actorList(it) {
   return it.actors.split("、").map(s => s.trim()).filter(Boolean);
@@ -190,7 +197,7 @@ function copyPath(it, card) {
   done(legacy());
 }
 
-function render() {
+function visibleList() {
   const q = search.value.trim().toLowerCase();
   let list = DATA;
 
@@ -203,68 +210,102 @@ function render() {
       it.actress_folder.toLowerCase().includes(q)
     );
   }
-  list = sortData(list, sortKey);
+  return sortData(list, sortKey);
+}
 
-  countEl.textContent = `${list.length} / ${DATA.length}`;
+function cardEl(it, i) {
+  const card = document.createElement("a");
+  card.className = "card";
+  if (PLAY_MODE === "protocol") {
+    card.href = playUrl(it);
+  } else {
+    card.href = "#";
+    card.title = it.video_path;
+    card.addEventListener("click", ev => {
+      ev.preventDefault();
+      copyPath(it, card);
+    });
+  }
+  // 逐个错开出现，最多延迟到 24 个，避免长列表末尾等待过久
+  card.style.animationDelay = Math.min(i, 24) * 22 + "ms";
+  const cover = it.poster_url
+    ? `<img src="${it.poster_url}" loading="lazy" alt="">`
+    : `<div class="no-cover">NO COVER</div>`;
+  const actorsHtml = actorList(it)
+    .map(name => `<span class="actor-link" data-actor="${name}">${name}</span>`)
+    .join('<span class="actor-sep">、</span>');
+  card.innerHTML = `
+    <div class="cover-wrap">
+      ${cover}
+      <div class="play"><span>
+        ${PLAY_MODE === "protocol"
+          ? `<svg width="13" height="15" viewBox="0 0 13 15" fill="#fff"><path d="M0 0l13 7.5L0 15z"/></svg>`
+          : `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.4">
+               <rect x="5.5" y="5.5" width="9" height="9" rx="1.6"/>
+               <path d="M10.5 5.5v-3a1 1 0 0 0-1-1h-7a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h3"/>
+             </svg>`}
+      </span></div>
+      ${PLAY_MODE === "protocol" ? "" : `<div class="card-hint"></div>`}
+    </div>
+    <div class="meta">
+      <div class="code">${it.code}</div>
+      <div class="actors">${actorsHtml}</div>
+      <div class="sub">
+        ${it.studio ? `<span class="studio">${it.studio}</span><span class="dot"></span>` : ""}
+        <span class="date">${it.date || ""}${it.runtime ? " · " + it.runtime + "min" : ""}</span>
+      </div>
+    </div>
+  `;
+  card.querySelectorAll(".actor-link").forEach(el => {
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setActiveActor(el.dataset.actor);
+    });
+  });
+  return card;
+}
+
+function appendCards(cards) {
+  const frag = document.createDocumentFragment();
+  cards.forEach(c => frag.appendChild(c));
+  grid.appendChild(frag);
+}
+
+function appendRange(from, count) {
+  const batch = result.slice(from, from + count);
+  rendered = from + batch.length;
+  appendCards(batch.map((it, i) => cardEl(it, from + i)));
+}
+
+function loadMore() {
+  if (rendered >= result.length) return;
+  appendRange(rendered, PAGE);
+}
+
+function render() {
+  result = visibleList();
+  rendered = FULL_RENDER ? Infinity : PAGE;
+  countEl.textContent = `${result.length} / ${DATA.length}`;
   grid.innerHTML = "";
 
-  if (!list.length) {
+  if (!result.length) {
     grid.innerHTML = `<div class="empty">${t("empty")}</div>`;
     return;
   }
+  appendRange(0, rendered);
+}
 
-  list.forEach((it, i) => {
-    const card = document.createElement("a");
-    card.className = "card";
-    if (PLAY_MODE === "protocol") {
-      card.href = playUrl(it);
-    } else {
-      card.href = "#";
-      card.title = it.video_path;
-      card.addEventListener("click", ev => {
-        ev.preventDefault();
-        copyPath(it, card);
-      });
-    }
-    // 逐个错开出现，最多延迟到 24 个，避免长列表末尾等待过久
-    card.style.animationDelay = Math.min(i, 24) * 22 + "ms";
-    const cover = it.poster_url
-      ? `<img src="${it.poster_url}" loading="lazy" alt="">`
-      : `<div class="no-cover">NO COVER</div>`;
-    const actorsHtml = actorList(it)
-      .map(name => `<span class="actor-link" data-actor="${name}">${name}</span>`)
-      .join('<span class="actor-sep">、</span>');
-    card.innerHTML = `
-      <div class="cover-wrap">
-        ${cover}
-        <div class="play"><span>
-          ${PLAY_MODE === "protocol"
-            ? `<svg width="13" height="15" viewBox="0 0 13 15" fill="#fff"><path d="M0 0l13 7.5L0 15z"/></svg>`
-            : `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.4">
-                 <rect x="5.5" y="5.5" width="9" height="9" rx="1.6"/>
-                 <path d="M10.5 5.5v-3a1 1 0 0 0-1-1h-7a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h3"/>
-               </svg>`}
-        </span></div>
-        ${PLAY_MODE === "protocol" ? "" : `<div class="card-hint"></div>`}
-      </div>
-      <div class="meta">
-        <div class="code">${it.code}</div>
-        <div class="actors">${actorsHtml}</div>
-        <div class="sub">
-          ${it.studio ? `<span class="studio">${it.studio}</span><span class="dot"></span>` : ""}
-          <span class="date">${it.date || ""}${it.runtime ? " · " + it.runtime + "min" : ""}</span>
-        </div>
-      </div>
-    `;
-    card.querySelectorAll(".actor-link").forEach(el => {
-      el.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setActiveActor(el.dataset.actor);
-      });
-    });
-    grid.appendChild(card);
-  });
+// 滚动接近底部时追加下一批；旧浏览器无 IntersectionObserver 时
+// 走 FULL_RENDER 全量渲染，行为与分批前一致
+if (!FULL_RENDER) {
+  const sentinel = document.getElementById("sentinel");
+  if (sentinel) {
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) loadMore();
+    }, { rootMargin: "300px" });
+    observer.observe(sentinel);
+  }
 }
 
 function updateClearBtn() {

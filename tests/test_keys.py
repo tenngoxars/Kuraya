@@ -175,6 +175,21 @@ class MouseMode(unittest.TestCase):
     def test_parse_cpr_garbage(self):
         self.assertIsNone(keys._parse_cpr(b'not-a-cpr'))
 
+    def test_terminal_mouse_status(self):
+        with mock.patch.dict('os.environ',
+                             {'TERM_PROGRAM': 'WarpTerminal'}, clear=False):
+            self.assertEqual(keys.terminal_mouse_status(),
+                             'warp-needs-toggle')
+        with mock.patch.dict('os.environ',
+                             {'TERM_PROGRAM': 'Apple_Terminal'},
+                             clear=False):
+            self.assertEqual(keys.terminal_mouse_status(), 'unsupported')
+        with mock.patch.dict('os.environ',
+                             {'TERM_PROGRAM': 'iTerm.app'}, clear=False):
+            self.assertEqual(keys.terminal_mouse_status(), 'ok')
+        with mock.patch.dict('os.environ', {}, clear=True):
+            self.assertEqual(keys.terminal_mouse_status(), 'ok')
+
     def test_windows_toggles_stdin_vt(self):
         """Windows 上启用鼠标时把 stdin 切到 VT 输入，退出恢复"""
         with mock.patch.object(keys.os, 'name', 'nt'), \

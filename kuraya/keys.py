@@ -57,6 +57,21 @@ def _win_stdin_vt(on):
         pass
 
 
+def terminal_mouse_status():
+    """
+    终端对鼠标报告的支持状态：
+      'ok'                —— 应用启用序列即可生效
+      'warp-needs-toggle' —— Warp 需用户手动开启 Mouse Reporting（默认关）
+      'unsupported'       —— 系统 Terminal.app 不支持鼠标报告
+    """
+    prog = os.environ.get('TERM_PROGRAM', '')
+    if prog == 'WarpTerminal':
+        return 'warp-needs-toggle'
+    if prog == 'Apple_Terminal':
+        return 'unsupported'
+    return 'ok'
+
+
 def enable_mouse():
     """启用鼠标报告，让点击菜单项变成输入事件。非 TTY 静默跳过"""
     global _mouse_depth

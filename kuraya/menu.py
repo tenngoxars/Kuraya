@@ -12,6 +12,8 @@ from . import launcher, picker, settings, setup, updater
 from .i18n import tr
 from .launcher import C, W, brand, dw, rule, say
 
+_mouse_hint_shown = False  # 终端鼠标提示每会话只显示一次
+
 
 def clear_screen():
     """清屏。终端不支持时退回打印空行，不让报错干扰界面"""
@@ -72,10 +74,13 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
     终端支持鼠标报告时，点击选项行直接选中。
     esc_label 描述 Esc 在此菜单的动作（主菜单为「退出」，子菜单为「返回」）。
     """
-    from .keys import enable_mouse, disable_mouse, query_cursor, read_key
+    from .keys import (enable_mouse, disable_mouse, query_cursor, read_key,
+                       terminal_mouse_status)
+    global _mouse_hint_shown
     esc_label = esc_label or tr('返回')
     n = len(options)
     enable_mouse()
+    status = terminal_mouse_status()
     try:
         while True:
             # 整屏重绘期间隐藏光标：Windows cls 逐行重画时
@@ -107,6 +112,16 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
             # 光标在提示行的下一行（print 换行后），选项 i 所在行 =
             # 光标行 - 2(空行+提示行) - (n - 1 - i)，点击命中即选中
             cursor = query_cursor()
+            # 终端鼠标提示放在光标查询之后输出，不影响点击行号映射
+            if status != 'ok' and not _mouse_hint_shown:
+                if status == 'warp-needs-toggle':
+                    warn = tr('提示：Warp 需开启 Mouse Reporting（菜单 View '
+                              '→ Toggle Mouse Reporting）才能点击菜单')
+                else:
+                    warn = tr('提示：当前终端不支持鼠标点击，请用方向键'
+                              '选择（或换 iTerm2/Warp）')
+                print(f'  {C.FAINT}{warn}{C.RESET}')
+                _mouse_hint_shown = True
             key = read_key()
             if isinstance(key, tuple) and key[0] == 'click':
                 if cursor:

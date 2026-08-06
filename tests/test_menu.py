@@ -87,6 +87,27 @@ class ClickSelection(unittest.TestCase):
         out = buffer.getvalue()
         self.assertLess(out.index('\x1b[?25l'), out.index('\x1b[?25h'))
 
+    def test_warp_hint_shown_once(self):
+        """Warp 下提示开启 Mouse Reporting，且每会话只提示一次"""
+        import io
+        from contextlib import redirect_stdout
+        menu._mouse_hint_shown = False
+        buffer = io.StringIO()
+        with mock.patch.object(menu, 'clear_screen'), \
+             mock.patch.object(menu, 'brand'), \
+             mock.patch.object(menu, 'rule'), \
+             mock.patch.object(menu, 'say'), \
+             mock.patch('kuraya.keys.query_cursor', return_value=(17, 1)), \
+             mock.patch('kuraya.keys.read_key', return_value='enter'), \
+             mock.patch('kuraya.keys.enable_mouse'), \
+             mock.patch('kuraya.keys.disable_mouse'), \
+             mock.patch('kuraya.keys.terminal_mouse_status',
+                        return_value='warp-needs-toggle'), \
+             redirect_stdout(buffer):
+            menu.menu_loop(lambda: None, OPTIONS)
+        self.assertIn('Mouse Reporting', buffer.getvalue())
+        menu._mouse_hint_shown = False
+
 
 if __name__ == '__main__':
     unittest.main()

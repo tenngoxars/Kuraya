@@ -89,7 +89,6 @@ class Spinner:
         self.active = False
         self.t0 = 0.0
         self.thread = None
-
     def _loop(self):
         i = 0
         while self.active:
@@ -145,6 +144,89 @@ def say(text=''):
         print(text)
 
 
+class ScrapePanel:
+    """
+    刮削进度面板：固定 6 行区域原地重绘，不随影片增多而滚动。
+
+    行结构（行数恒定 → 不会占满屏幕）：
+      0  ▸ 番号  [i/n]
+      1  ├ 封面  已下载
+      2  ├ 裁剪  已生成竖版海报
+      3  ├ 元数据  演员 · 厂商 · 发行日期
+      4  └ 入库  …  3.2s
+      5  已处理 i/n · 成功 x · 失败 y
+
+    只在交互终端启用（TTY + 非 QUIET + 非 VERBOSE）；否则调用方
+    回退为逐行输出，面板不做任何事。
+    """
+
+    ROWS = 6
+
+    def __init__(self):
+        self.active = False
+        self.top = 0          # 面板首行（1-based），CPR 查得后不再变
+        self.lines = [''] * self.ROWS
+
+    def start(self):
+        """进入面板模式：输出占位行并记录首行行号。失败则保持 inactive"""
+        if QUIET or VERBOSE or not sys.stdout.isatty():
+            return
+        from .keys import query_cursor
+        pos = query_cursor()
+        if not pos:
+            return            # 终端不应答 CPR，回退逐行输出
+        sys.stdout.write('\n' * self.ROWS)
+        sys.stdout.flush()
+        self.top = pos[0] - self.ROWS
+        self.active = True
+        self.render()
+
+    def set(self, index, text):
+        """更新面板第 index 行（0-based），原地重绘"""
+        if not self.active:
+            return
+        self.lines[index] = text
+        self.render()
+
+    def render(self):
+        out = [f'\x1b[{self.top};1H']
+        for line in self.lines:
+            out.append(f'\x1b[2K{line}\n')
+        out.append(f'\x1b[{self.top + self.ROWS};1H')
+        sys.stdout.write(''.join(out))
+        sys.stdout.flush()
+
+    def end(self):
+        """收尾：光标移到面板底部，面板内容保留在屏幕上。
+        clear=True 时先清空面板区域（无影片等无内容场景不留空白）"""
+        if not self.active:
+            return
+        sys.stdout.write(f'\x1b[{self.top + self.ROWS};1H')
+        sys.stdout.flush()
+        self.active = False
+
+    def clear(self):
+        """清空面板区域（Found=0 等场景不留 6 行空白）"""
+        if not self.active:
+            return
+        out = [f'\x1b[{self.top};1H']
+        for _ in range(self.ROWS):
+            out.append('\x1b[2K\n')
+        out.append(f'\x1b[{self.top};1H')
+        sys.stdout.write(''.join(out))
+        sys.stdout.flush()
+        self.active = False
+
+
+def panel_stat(stats, index, tr):
+    """面板统计行：已处理 i/n · 成功 x · 失败 y（tr 由调用方注入避免循环导入）"""
+    total = stats['found'] or '?'
+    bits = [tr('已处理 {index}/{total}', index=index, total=total),
+            tr('成功 {done}', done=stats['done']),
+            tr('失败 {failed}', failed=stats['failed'])]
+    return f'   {C.GREY}{" · ".join(bits)}{C.RESET}'
+
+
 # ---------- 输出组件 ----------
 def rule(char='─'):
     say(f'{C.FAINT}  {char * W}{C.RESET}')
@@ -185,11 +267,16 @@ BRANCH_W = W - 12  # 分步状态行中正文可用的显示宽度
 
 def branch(connector, label, detail, right='', color=None):
     """影片处理过程中的分步状态。detail 为纯文本，right 右对齐显示"""
+    say(branch_text(connector, label, detail, right=right, color=color))
+
+
+def branch_text(connector, label, detail, right='', color=None):
+    """与 branch() 相同的排版，返回文本而非输出，供面板行使用"""
     body = clip(detail, BRANCH_W - (dw(right) + 2 if right else 0))
     space = ' ' * max(1, BRANCH_W - dw(body) - dw(right)) if right else ''
     tail = f'{space}{C.FAINT}{right}{C.RESET}' if right else ''
-    say(f'     {C.FAINT}{connector}{C.RESET} {C.GREY}{pad(label, 7)}{C.RESET}'
-        f'{color or ""}{body}{C.RESET if color else ""}{tail}')
+    return (f'     {C.FAINT}{connector}{C.RESET} {C.GREY}{pad(label, 7)}{C.RESET}'
+            f'{color or ""}{body}{C.RESET if color else ""}{tail}')
 
 
 def movie_detail(movie):

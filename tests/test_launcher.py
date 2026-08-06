@@ -9,6 +9,7 @@
 """
 import io
 import re
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -19,6 +20,7 @@ from kuraya import i18n as _i18n
 _i18n._lang = _i18n.ZH_CN  # 测试断言简体中文文案，先固定语言再导入被测模块
 
 from kuraya import launcher, setup
+from kuraya.i18n import tr
 from kuraya.media.model import (CoverReady, FailReason, Failed, Fetched, Found,
                                 Movie, PosterReady, Probing, Settings, Stage,
                                 Started, Stored)
@@ -331,6 +333,124 @@ class LiveText(unittest.TestCase):
             self.assertNotEqual(en, zh)  # 判别性：冻结的模块级 tr 两者必相等
         finally:
             _i18n._lang = _i18n.ZH_CN
+
+
+class ScrapePanel(unittest.TestCase):
+    """刮削进度面板：TTY 下固定区域原地重绘，非 TTY 回退逐行"""
+
+    class _TTYBuffer(io.StringIO):
+        """模拟 TTY 的缓冲流：isatty 返回可配置值"""
+        _tty = True
+
+        def isatty(self):
+            return self._tty
+
+    def panel(self, isatty=True, cursor=(20, 1), quiet=False):
+        from kuraya import console
+        old_quiet, old_verbose = console.QUIET, console.VERBOSE
+        console.QUIET = quiet
+        console.VERBOSE = False
+        try:
+            buffer = self._TTYBuffer()
+            buffer._tty = isatty
+            panel = console.ScrapePanel()
+            with mock.patch('kuraya.keys.query_cursor',
+                            return_value=cursor), \
+                 redirect_stdout(buffer):
+                panel.start()
+                panel.set(0, '   ▸ ABC-001  [1/3]')
+                panel.set(5, '   已处理 1/3 · 成功 0')
+                panel.end()
+        finally:
+            console.QUIET, console.VERBOSE = old_quiet, old_verbose
+        return buffer.getvalue(), panel
+
+    def test_tty_activates_and_repaints_in_place(self):
+        """TTY：面板激活，输出按固定行号重绘（不滚动）"""
+        out, panel = self.panel()
+        self.assertFalse(panel.active)    # end 后已收尾
+        # 重绘序列：定位到面板首行 + 清行
+        self.assertIn('\x1b[14;1H', out)      # 20 - 6 = 14 首行
+        self.assertIn('\x1b[2K', out)         # 清行
+        self.assertIn('ABC-001', out)
+        self.assertIn('已处理 1/3', out)
+        # end 收尾：光标移到面板底部行
+        self.assertIn('\x1b[20;1H', out)
+
+    def test_start_activates_when_tty(self):
+        """TTY + CPR 可用：start 后面板激活"""
+        from kuraya import console
+        buffer = self._TTYBuffer()
+        panel = console.ScrapePanel()
+        with mock.patch('kuraya.keys.query_cursor', return_value=(20, 1)), \
+             redirect_stdout(buffer):
+            panel.start()
+            self.assertTrue(panel.active)
+            panel.end()
+
+    def test_non_tty_stays_inactive(self):
+        """非 TTY（管道/脚本）：面板不激活，零输出"""
+        out, panel = self.panel(isatty=False)
+        self.assertFalse(panel.active)
+        self.assertEqual(out, '')
+
+    def test_cpr_failure_falls_back(self):
+        """CPR 不应答（终端不支持）：面板不激活，回退逐行"""
+        out, panel = self.panel(cursor=None)
+        self.assertFalse(panel.active)
+        self.assertEqual(out, '')
+
+    def test_quiet_disables_panel(self):
+        """QUIET 模式：面板不激活，无重绘输出"""
+        out, panel = self.panel(quiet=True)
+        self.assertFalse(panel.active)
+        self.assertNotIn('\x1b[', out)
+
+    def test_panel_stat_text(self):
+        """统计行：成功/失败计数正确"""
+        from kuraya import console
+        stats = {'found': 3, 'done': 2, 'failed': 1}
+        text = console.panel_stat(stats, 3, tr)
+        self.assertIn('已处理 3/3', text)
+        self.assertIn('成功 2', text)
+        self.assertIn('失败 1', text)
+
+    def test_panel_stat_shows_zero_failures(self):
+        """统计行恒显示失败项（方案要求 成功/失败/共 N 三件套）"""
+        from kuraya import console
+        stats = {'found': 3, 'done': 3, 'failed': 0}
+        text = console.panel_stat(stats, 3, tr)
+        self.assertIn('失败 0', text)
+
+    def test_empty_library_clears_panel(self):
+        """Found=0：面板区域被清空，不留 6 行空白"""
+        from kuraya import console
+        buffer = self._TTYBuffer()
+        panel = console.ScrapePanel()
+        with mock.patch('kuraya.keys.query_cursor', return_value=(20, 1)), \
+             redirect_stdout(buffer):
+            panel.start()
+            self.assertTrue(panel.active)
+            panel.clear()
+            self.assertFalse(panel.active)
+            # 清空序列：clear 至少清 6 行（start 的首帧渲染也有清行）
+            out = buffer.getvalue()
+            self.assertIn('\x1b[14;1H', out)
+            self.assertGreaterEqual(out.count('\x1b[2K'), 6)
+
+    def test_failed_count_rendered_before_panel_update(self):
+        """失败统计先计数后渲染：面板统计行包含本次失败（判别性）"""
+        from kuraya import console
+        buffer = self._TTYBuffer()
+        panel = console.ScrapePanel()
+        with mock.patch('kuraya.keys.query_cursor', return_value=(20, 1)), \
+             redirect_stdout(buffer):
+            panel.start()
+            stats = {'found': 1, 'done': 0, 'failed': 0}
+            stats['failed'] += 1
+            panel.set(5, console.panel_stat(stats, 1, tr))
+            panel.end()
+        self.assertIn('失败 1', buffer.getvalue())
 
 
 if __name__ == '__main__':

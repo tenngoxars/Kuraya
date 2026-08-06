@@ -17,14 +17,16 @@ _i18n._lang = _i18n.ZH_CN
 class Uninstall(unittest.TestCase):
     """卸载流程：确认 → PATH → shim → 程序目录"""
 
-    def run_uninstall(self, answer='y', frozen=True, win32=False, darwin=False,
+    def run_uninstall(self, answer='y', cfg_answer='n', frozen=True,
+                      win32=False, darwin=False,
                       executable='/opt/Kuraya/Kuraya'):
         with mock.patch.object(main, 'FROZEN', frozen), \
                 mock.patch.object(main.sys, 'platform',
                                   'win32' if win32
                                   else ('darwin' if darwin else 'linux')), \
                 mock.patch.object(main.sys, 'executable', executable), \
-                mock.patch('builtins.input', return_value=answer), \
+                mock.patch('builtins.input',
+                           side_effect=[answer, cfg_answer]), \
                 mock.patch('kuraya.pathenv.uninstall',
                            return_value=(True, '')), \
                 mock.patch('shutil.rmtree') as rmtree:
@@ -36,6 +38,37 @@ class Uninstall(unittest.TestCase):
         self.assertEqual(code, 0)
         rmtree.assert_called()          # 删除程序目录
         rmtree.assert_any_call(mock.ANY, ignore_errors=True)  # 壳 app
+
+    def test_confirms_and_removes_config(self):
+        """确认卸载并确认删除配置：配置目录一并移除"""
+        code, rmtree = self.run_uninstall(cfg_answer='y')
+        self.assertEqual(code, 0)
+        rmtree.assert_any_call(main.settings.APP_DIR)  # 配置目录
+
+    def test_config_kept_by_default(self):
+        """配置询问默认保留：不回 y 就不删配置目录"""
+        code, rmtree = self.run_uninstall()
+        self.assertEqual(code, 0)
+        for call in rmtree.call_args_list:
+            self.assertNotEqual(call.args[0], main.settings.APP_DIR)
+
+    def test_config_missing_not_an_error(self):
+        """从未运行过（配置目录不存在）：确认删除也不误报失败"""
+        with mock.patch.object(main, 'FROZEN', True), \
+                mock.patch.object(main.sys, 'platform', 'linux'), \
+                mock.patch.object(main.sys, 'executable', '/opt/Kuraya/Kuraya'), \
+                mock.patch('builtins.input', side_effect=['y', 'y']), \
+                mock.patch('kuraya.pathenv.uninstall',
+                           return_value=(True, '')), \
+                mock.patch.object(main.settings, 'APP_DIR',
+                                  main.Path('/nonexistent/kuraya-config')), \
+                mock.patch('shutil.rmtree') as rmtree:
+            code = main.do_uninstall()
+        self.assertEqual(code, 0)
+        # 配置目录不存在：不应触发对它的删除调用
+        for call in rmtree.call_args_list:
+            self.assertNotEqual(call.args[0],
+                                main.Path('/nonexistent/kuraya-config'))
 
     def test_cancel_keeps_everything(self):
         code, rmtree = self.run_uninstall(answer='n')
@@ -57,6 +90,7 @@ class Uninstall(unittest.TestCase):
         """Windows 上运行中的 exe 无法自删，提示手动删除"""
         code, rmtree = self.run_uninstall(win32=True)
         self.assertEqual(code, 0)
+        # Windows 分支不删程序目录，只可能删配置（cfg_answer 默认 n）
         rmtree.assert_not_called()
 
 

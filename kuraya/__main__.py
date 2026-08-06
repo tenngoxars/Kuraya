@@ -170,9 +170,30 @@ def do_uninstall():
             # ignore_errors=True 已容忍路径不存在，无需先 exists() 判断
             shutil.rmtree(app, ignore_errors=True)
 
-    config_msg = tr('配置保留在 {path}，如需彻底清理请删除该目录',
-                    path=settings.APP_DIR)
-    print(f'  {C.GREY}{config_msg}{C.RESET}')
+    # 4. 配置文件：默认保留（防止误删用户数据），确认后才一并删除
+    try:
+        config_prompt = tr('是否同时删除配置文件 {path}？[y/N]',
+                           path=settings.APP_DIR)
+        answer = input(f'  {config_prompt} {C.GOLD}›{C.RESET} '
+                       ).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        answer = ''
+    if answer in ('y', 'yes'):
+        if not settings.APP_DIR.exists():
+            # 从未运行过就没有配置目录，不算失败
+            print(f'  {C.GREY}{tr("无配置文件，无需清理")}{C.RESET}')
+        else:
+            try:
+                shutil.rmtree(settings.APP_DIR)
+                print(f'  {C.GREEN}✓{C.RESET} '
+                      f'{tr("已删除配置目录 {path}", path=settings.APP_DIR)}')
+            except OSError as exc:
+                print(f'  {C.RED}✕{C.RESET} '
+                      f'{tr("删除配置目录失败：{exc}", exc=exc)}')
+    else:
+        config_msg = tr('配置保留在 {path}，如需彻底清理请删除该目录',
+                        path=settings.APP_DIR)
+        print(f'  {C.GREY}{config_msg}{C.RESET}')
     return 0
 
 

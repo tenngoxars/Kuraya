@@ -439,27 +439,41 @@ def offer_open_library(library, opts=None):
             print(f'  {mark}{C.RESET}  {style}{label}{C.RESET}'
                   f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}'
                   f'\x1b[K')
-        print(f'  {C.FAINT}{tr("↑↓ 选择 · 回车 确认 · Esc 跳过")}{C.RESET}'
-              f'\x1b[K')
+        print(f'  {C.FAINT}{tr("↑↓ 选择 · 回车 确认 · 鼠标点击 · Esc 跳过")}'
+              f'{C.RESET}\x1b[K')
 
     say()
     render()
-    while True:
-        key = keys.read_key()
-        if key == 'up':
-            selected = (selected - 1) % len(choices)
-        elif key == 'down':
-            selected = (selected + 1) % len(choices)
-        elif key in ('enter', ''):
-            if selected == 0:
-                open_library(library)
-            return True
-        elif key in ('esc', 'eof', 'backspace', '?'):
-            return True
-        else:
-            continue
-        sys.stdout.write(f'\x1b[{height}A')
-        render()
+    keys.enable_mouse()
+    try:
+        while True:
+            cursor = keys.query_cursor()
+            key = keys.read_key()
+            if isinstance(key, tuple) and key[0] == 'click':
+                if cursor:
+                    # 选项 i 所在行 = 光标行 - 3 + i（空行、另一选项、提示行在前）
+                    hit = key[2] - cursor[0] + 3
+                    if 0 <= hit < len(choices):
+                        if hit == 0:
+                            open_library(library)
+                        return True
+                continue
+            if key == 'up':
+                selected = (selected - 1) % len(choices)
+            elif key == 'down':
+                selected = (selected + 1) % len(choices)
+            elif key in ('enter', ''):
+                if selected == 0:
+                    open_library(library)
+                return True
+            elif key in ('esc', 'eof', 'backspace', '?'):
+                return True
+            else:
+                continue
+            sys.stdout.write(f'\x1b[{height}A')
+            render()
+    finally:
+        keys.disable_mouse()
 
 
 def cmd_rebuild(library):

@@ -79,6 +79,19 @@ class ReadKeyPosix(unittest.TestCase):
         env['termios'].tcsetattr.assert_called_once_with(
             keys.sys.stdin.fileno(), env['termios'].TCSADRAIN, 'old')
 
+    def test_mouse_click_sequence(self):
+        """SGR 鼠标序列 \x1b[<b;x;yM 解析为点击坐标（列, 行）"""
+        self.assertEqual(self.key(b'\x1b', b'[<0;10;5M'),
+                         ('click', 10, 5))
+
+    def test_mouse_release_event(self):
+        """释放事件（m 结尾）同样携带坐标，按点击处理"""
+        self.assertEqual(self.key(b'\x1b', b'[<3;20;8m'),
+                         ('click', 20, 8))
+
+    def test_malformed_mouse_sequence(self):
+        self.assertEqual(self.key(b'\x1b', b'[<xx'), '?')
+
 
 class ReadKeyWindows(unittest.TestCase):
     """Windows 走 msvcrt"""
@@ -90,6 +103,7 @@ class ReadKeyWindows(unittest.TestCase):
     def key(self, *bytes_seq):
         msvcrt = mock.MagicMock()
         msvcrt.getch.side_effect = bytes_seq
+        msvcrt.kbhit.side_effect = [False]  # 默认无后续转义字节
         with mock.patch.dict('sys.modules', {'msvcrt': msvcrt}):
             return keys._read_key_win()
 
@@ -111,6 +125,50 @@ class ReadKeyWindows(unittest.TestCase):
     def test_ctrl_c_raises(self):
         with self.assertRaises(KeyboardInterrupt):
             self.key(b'\x03')
+
+    def test_mouse_click_sequence(self):
+        """Windows 终端（WT）的鼠标序列走 msvcrt 逐字节收集"""
+        msvcrt = mock.MagicMock()
+        seq = [b'\x1b', b'[', b'<', b'0', b';', b'1', b'2', b';', b'5', b'M']
+        msvcrt.getch.side_effect = seq
+        msvcrt.kbhit.side_effect = [True] * (len(seq) - 1) + [False]
+        with mock.patch.dict('sys.modules', {'msvcrt': msvcrt}):
+            self.assertEqual(keys._read_key_win(), ('click', 12, 5))
+
+    def test_esc_with_trailing_bytes(self):
+        """Esc 后跟方向键序列（WT 风格 \x1b[A）识别为方向键"""
+        msvcrt = mock.MagicMock()
+        msvcrt.getch.side_effect = [b'\x1b', b'[', b'B']
+        msvcrt.kbhit.side_effect = [True, True, False]
+        with mock.patch.dict('sys.modules', {'msvcrt': msvcrt}):
+            self.assertEqual(keys._read_key_win(), 'down')
+
+
+class MouseMode(unittest.TestCase):
+    """鼠标报告启用/禁用（嵌套引用计数）+ 光标位置解析"""
+
+    def setUp(self):
+        self.isatty = mock.patch.object(keys.os, 'isatty',
+                                        return_value=True).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def test_balanced_enable_disable(self):
+        """最外层退出才真正关闭鼠标报告"""
+        with mock.patch.object(keys.sys.stdout, 'write') as write, \
+             mock.patch.object(keys.sys.stdout, 'flush'):
+            keys.enable_mouse()
+            keys.enable_mouse()
+            keys.disable_mouse()          # 内层退出：不关闭
+            write.assert_called_once_with(keys.MOUSE_ENABLE)
+            keys.disable_mouse()          # 外层退出：关闭
+            write.assert_called_with(keys.MOUSE_DISABLE)
+            self.assertEqual(write.call_count, 2)
+
+    def test_parse_cpr(self):
+        self.assertEqual(keys._parse_cpr(b'\x1b[12;5R'), (12, 5))
+
+    def test_parse_cpr_garbage(self):
+        self.assertIsNone(keys._parse_cpr(b'not-a-cpr'))
 
 
 if __name__ == '__main__':

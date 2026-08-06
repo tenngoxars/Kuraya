@@ -285,12 +285,46 @@ class OfferOpenLibrary(unittest.TestCase):
         opened = mock.Mock()
         with mock.patch('kuraya.keys.read_key',
                         side_effect=['down', 'enter']), \
+             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
              mock.patch.object(launcher, 'open_library', opened), \
              redirect_stdout(buffer):
             launcher.offer_open_library(Path('lib'))
         out = buffer.getvalue()
         self.assertIn('\x1b[3A', out)          # 上移三行重绘（两选项 + 提示）
         self.assertIn('稍后再说', out)          # 第二项存在
+        opened.assert_not_called()
+
+    def test_click_opens_library(self):
+        """点击选项 0（光标行 10 - 3 = 第 7 行）直接打开"""
+        opened = mock.Mock()
+        with mock.patch('kuraya.keys.read_key',
+                        return_value=('click', 5, 7)), \
+             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
+             mock.patch.object(launcher, 'open_library', opened):
+            offered = launcher.offer_open_library(Path('lib'))
+        self.assertTrue(offered)
+        opened.assert_called_once()
+
+    def test_click_later_skips(self):
+        """点击选项 1（第 8 行）跳过不打开"""
+        opened = mock.Mock()
+        with mock.patch('kuraya.keys.read_key',
+                        return_value=('click', 5, 8)), \
+             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
+             mock.patch.object(launcher, 'open_library', opened):
+            offered = launcher.offer_open_library(Path('lib'))
+        self.assertTrue(offered)
+        opened.assert_not_called()
+
+    def test_click_blank_ignored(self):
+        """点击空白行忽略，继续等键"""
+        opened = mock.Mock()
+        with mock.patch('kuraya.keys.read_key',
+                        side_effect=[('click', 5, 1), 'esc']), \
+             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
+             mock.patch.object(launcher, 'open_library', opened):
+            offered = launcher.offer_open_library(Path('lib'))
+        self.assertTrue(offered)
         opened.assert_not_called()
 
     def test_quiet_skips_prompt(self):

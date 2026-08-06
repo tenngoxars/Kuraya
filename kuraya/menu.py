@@ -68,46 +68,63 @@ def shorten(path, room):
 def menu_loop(draw_header, options, selected=0, esc_label=None):
     """
     方向键导航 + 回车确认的选择器。options: [(key, label, desc)]。
-    返回选中项的 key；Esc / EOF 返回 None。数字键仍是快捷方式。
+    返回选中项的 key；Esc / EOF 返回 None。数字键仍是快捷方式；
+    终端支持鼠标报告时，点击选项行直接选中。
     esc_label 描述 Esc 在此菜单的动作（主菜单为「退出」，子菜单为「返回」）。
     """
-    from .keys import read_key
+    from .keys import enable_mouse, disable_mouse, query_cursor, read_key
     esc_label = esc_label or tr('返回')
-    while True:
-        clear_screen()
-        say()
-        brand()
-        say()
-        draw_header()
-        say()
-        rule()
-        say()
-        for i, (key, label, desc) in enumerate(options):
-            if i == selected:
-                say(f'  {C.GOLD}▸{C.RESET} {C.GOLD}{key}{C.RESET}  '
-                    f'{C.BOLD}{label}{C.RESET}'
-                    f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}')
-            else:
-                say(f'  {C.GREY}·{C.RESET} {C.GOLD}{key}{C.RESET}  {label}'
-                    f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}')
-        say()
-        hint = tr('↑↓ 选择 · 回车 确认 · Esc {action}', action=esc_label)
-        # 完整换行输出：光标落在下一行行首，不悬停在行尾
-        # （悬停会让终端/Warp 把提示行当输入块，方向键被拦截）
-        print(f'  {C.FAINT}{hint}{C.RESET}')
-        key = read_key()
-        if key == 'up':
-            selected = (selected - 1) % len(options)
-        elif key == 'down':
-            selected = (selected + 1) % len(options)
-        elif key in ('enter', ''):
-            return options[selected][0]
-        elif key in ('esc', 'eof'):
-            return None
-        elif key.isdigit():
-            for k, _, _ in options:
-                if k == key:
-                    return k
+    n = len(options)
+    enable_mouse()
+    try:
+        while True:
+            clear_screen()
+            say()
+            brand()
+            say()
+            draw_header()
+            say()
+            rule()
+            say()
+            for i, (key, label, desc) in enumerate(options):
+                if i == selected:
+                    say(f'  {C.GOLD}▸{C.RESET} {C.GOLD}{key}{C.RESET}  '
+                        f'{C.BOLD}{label}{C.RESET}'
+                        f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}')
+                else:
+                    say(f'  {C.GREY}·{C.RESET} {C.GOLD}{key}{C.RESET}  {label}'
+                        f'{" " * max(2, 14 - dw(label))}{C.FAINT}{desc}{C.RESET}')
+            say()
+            hint = tr('↑↓ 选择 · 回车 确认 · 鼠标点击 · Esc {action}',
+                      action=esc_label)
+            # 完整换行输出：光标落在下一行行首，不悬停在行尾
+            # （悬停会让终端/Warp 把提示行当输入块，方向键被拦截）
+            print(f'  {C.FAINT}{hint}{C.RESET}')
+            # 光标在提示行的下一行（print 换行后），选项 i 所在行 =
+            # 光标行 - 2(空行+提示行) - (n - 1 - i)，点击命中即选中
+            cursor = query_cursor()
+            key = read_key()
+            if isinstance(key, tuple) and key[0] == 'click':
+                if cursor:
+                    _, _, row = key
+                    hit = row - cursor[0] + n + 2
+                    if 0 <= hit < n:
+                        return options[hit][0]
+                continue
+            if key == 'up':
+                selected = (selected - 1) % n
+            elif key == 'down':
+                selected = (selected + 1) % n
+            elif key in ('enter', ''):
+                return options[selected][0]
+            elif key in ('esc', 'eof'):
+                return None
+            elif key.isdigit():
+                for k, _, _ in options:
+                    if k == key:
+                        return k
+    finally:
+        disable_mouse()
 
 
 def draw_header(library, source):
@@ -179,10 +196,14 @@ def language_label(code):
 
 
 def pause():
-    """回车或 Esc 返回菜单"""
-    from .keys import read_key
-    print(f'\n  {C.FAINT}{tr("按回车返回菜单")}{C.RESET}')
-    read_key()
+    """回车、Esc 或鼠标点击任意处返回菜单"""
+    from .keys import disable_mouse, enable_mouse, read_key
+    print(f'\n  {C.FAINT}{tr("按回车或点击鼠标返回菜单")}{C.RESET}')
+    enable_mouse()
+    try:
+        read_key()
+    finally:
+        disable_mouse()
 
 
 def language_menu():

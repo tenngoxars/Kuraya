@@ -224,7 +224,7 @@ class Download(unittest.TestCase):
             self.addCleanup(shutil.rmtree, tmp_root, ignore_errors=True)
 
     def test_non_200_raises(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory():
             resp = self.FakeResp(b'')
             resp.status_code = 404
             with mock.patch.object(updater.requests, 'get',
@@ -378,7 +378,6 @@ class Replace(unittest.TestCase):
         self.assertEqual(calls['n'], 3)
 
     def test_gives_up_after_retries(self):
-        real_rename = Path.rename
         with mock.patch.object(Path, 'rename',
                                side_effect=OSError('Access is denied')):
             with self.assertRaises(updater.UpdateError):

@@ -8,7 +8,6 @@
 """
 import locale
 import os
-import sys
 
 from . import i18n_en, i18n_zh_tw
 

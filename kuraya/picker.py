@@ -49,9 +49,8 @@ if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {{
 
 
 def _powershell(script):
-    """返回 (输出, 错误说明)。过程会打印到服务窗口，便于排查。"""
+    """返回 (输出, 错误说明)。失败原因由调用方展示给用户"""
     for exe in ('powershell', 'pwsh'):
-        print(f'  [选择框] 尝试用 {exe} 启动...', flush=True)
         try:
             proc = subprocess.run(
                 [exe, '-NoProfile', '-STA', '-Command', script],
@@ -59,18 +58,14 @@ def _powershell(script):
                 errors='replace', timeout=300,
             )
         except FileNotFoundError:
-            print(f'  [选择框] 找不到 {exe}，换下一个', flush=True)
             continue
         except subprocess.TimeoutExpired:
             return '', tr('选择框超时未关闭')
         except Exception as exc:
-            print(f'  [选择框] 启动失败 {type(exc).__name__}: {exc}', flush=True)
             return '', f'{type(exc).__name__}: {exc}'
 
         out = (proc.stdout or '').strip()
         err = (proc.stderr or '').strip()
-        print(f'  [选择框] 退出码={proc.returncode} '
-              f'输出={out!r} 错误={err[:200]!r}', flush=True)
         if out:
             return out, ''
         return '', err
@@ -117,8 +112,9 @@ def _tk(kind, title):
         return '', f'{type(exc).__name__}: {exc}'
 
 
-def pick(kind='folder', title='请选择'):
+def pick(kind='folder', title=None):
     """弹出选择框。返回 (路径, 错误)，用户取消时两者都为空。"""
+    title = title or tr('请选择')
     if os.name == 'nt':
         body = (_FOLDER if kind == 'folder' else _FILE).format(
             title=title,

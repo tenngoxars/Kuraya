@@ -17,6 +17,9 @@ from .model import Assets, Movie
 
 POSTER_RATIO = (2, 3)
 
+# fanart 原图宽高比（约 2.12:1）：竖版海报贴在横版封面右侧，从左边裁掉
+# 背板部分。与 POSTER_RATIO 用途不同——后者是海报的裁剪目标比例 (2:3)，
+# 前者是源图自身比例，裁出的海报比标准 2:3 略宽约 6% 属预期
 RATIO = 2.12
 
 KNOWN_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif')

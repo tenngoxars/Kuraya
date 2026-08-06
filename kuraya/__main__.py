@@ -11,6 +11,7 @@ import runpy
 import subprocess
 import sys
 import threading
+from pathlib import Path
 
 from . import NAME, TAGLINE, KANJI, __version__, console, protocol, settings
 from .i18n import tr
@@ -42,7 +43,7 @@ def run_internal(kind, args):
 
 
 # ---------- 各命令 ----------
-def resolve_paths(launcher, library_opt=None, source_opt=None):
+def resolve_paths(library_opt=None, source_opt=None):
     """确定影片库与待整理目录，命令行参数优先于配置文件"""
     if library_opt:
         return settings.ensure_dirs(library_opt, source_opt or '', create_library=False)
@@ -53,7 +54,7 @@ def resolve_paths(launcher, library_opt=None, source_opt=None):
         return None
     library, source = paths
     if source_opt:
-        source = settings.Path(source_opt).expanduser().resolve()
+        source = Path(source_opt).expanduser().resolve()
         source.mkdir(parents=True, exist_ok=True)
     return library, source
 
@@ -329,7 +330,7 @@ def main():
         updater.show()
         launcher.say()
         try:
-            paths = resolve_paths(launcher, opt('library'), opt('source'))
+            paths = resolve_paths(opt('library'), opt('source'))
         except settings.LibraryMissing as exc:
             setup.show_error(exc)
             return CONFIG_ERROR

@@ -24,7 +24,6 @@ def handler_command():
     """协议处理命令。打包成 exe 后指向 exe 自身，否则指向解释器加模块"""
     if getattr(sys, 'frozen', False):
         return f'"{sys.executable}" --play "%1"'
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return f'"{sys.executable}" -m kuraya --play "%1"'
 
 

@@ -9,6 +9,7 @@ Windows 走 msvcrt；POSIX 走 termios raw 模式，一次读一个字节。
 import os
 import re
 import sys
+import time  # Windows 分支 _query_cursor_win 也要用（超时兜底）
 
 if os.name != 'nt':
     # POSIX 终端控制模块。模块顶部加载：query_cursor 需要在写出
@@ -17,88 +18,27 @@ if os.name != 'nt':
     import select
     import termios
     import tty
-    import time
 
-# VT 鼠标报告：1003（all motion）让终端把移动与点击都以 SGR 序列
-# （\x1b[<b;x;yM）发到输入流——移动事件（btn 32-35）用于悬停高亮，
-# 按下事件用于点击执行。仅现代终端支持（Windows Terminal / iTerm2 /
-# xterm 等）；旧 conhost 忽略，点击无效但方向键照常。
-MOUSE_ENABLE = '\x1b[?1003h\x1b[?1006h'
-MOUSE_DISABLE = '\x1b[?1003l\x1b[?1006l'
-
-_mouse_depth = 0  # 菜单嵌套时引用计数，最外层退出才真正关闭
-_win_stdin_mode = None  # Windows 原始 stdin 控制台模式，退出时恢复
-
-
-def _win_stdin_vt(on):
-    """
-    Windows 切换 stdin 的 VT 输入模式。
-
-    默认控制台 stdin 是 LINE+ECHO 模式，方向键/鼠标报告/CPR 应答的
-    \\x1b 序列进不来且会被回显（屏幕上出现 ^[[18;1R 之类）；切到
-    PROCESSED+VT_INPUT 后以原始序列到达。退出时恢复原模式，
-    避免影响 input() 等行输入（如 updater 的更新确认）。
-    """
-    global _win_stdin_mode
+def _console_stdin_vt(on, saved=None):
+    """Windows 切换 stdin 的 VT 输入模式（CPR 应答需要，LINE+ECHO 下
+    应答进不来且会被回显成 ^[[18;1R 之类）。开启时返回切换前的原模式，
+    关闭时恢复之；失败返回 None"""
     try:
         import ctypes
         k = ctypes.windll.kernel32
         h = k.GetStdHandle(-10)  # STD_INPUT_HANDLE
         mode = ctypes.c_uint32()
         if not k.GetConsoleMode(h, ctypes.byref(mode)):
-            return
+            return None
         if on:
-            if _win_stdin_mode is None:
-                _win_stdin_mode = mode.value
+            if saved is None:
+                saved = mode.value
             k.SetConsoleMode(h, 0x201)  # PROCESSED_INPUT | VT_INPUT
         else:
-            k.SetConsoleMode(h, _win_stdin_mode or 3)
-            _win_stdin_mode = None
+            k.SetConsoleMode(h, saved or 3)
+        return saved
     except Exception:
-        pass
-
-
-def terminal_mouse_status():
-    """
-    终端对鼠标报告的支持状态：
-      'ok'                —— 应用启用序列即可生效
-      'warp-needs-toggle' —— Warp 需用户手动开启 Mouse Reporting（默认关）
-      'unsupported'       —— 系统 Terminal.app 不支持鼠标报告
-    """
-    prog = os.environ.get('TERM_PROGRAM', '')
-    if prog == 'WarpTerminal':
-        return 'warp-needs-toggle'
-    if prog == 'Apple_Terminal':
-        return 'unsupported'
-    return 'ok'
-
-
-def enable_mouse():
-    """启用鼠标报告，让点击菜单项变成输入事件。非 TTY 静默跳过"""
-    global _mouse_depth
-    if not os.isatty(sys.stdin.fileno()):
-        return
-    _mouse_depth += 1
-    if _mouse_depth == 1:
-        if os.name == 'nt':
-            _win_stdin_vt(True)
-        sys.stdout.write(MOUSE_ENABLE)
-        sys.stdout.flush()
-
-
-def disable_mouse():
-    """与 enable_mouse 配对，全部退出后恢复文本选择等终端默认行为"""
-    global _mouse_depth
-    if _mouse_depth > 0:
-        _mouse_depth -= 1
-    if _mouse_depth == 0:
-        if os.name == 'nt':
-            _win_stdin_vt(False)
-        try:
-            sys.stdout.write(MOUSE_DISABLE)
-            sys.stdout.flush()
-        except OSError:
-            pass
+        return None
 
 
 def query_cursor():
@@ -139,21 +79,27 @@ def _query_cursor_posix():
 
 def _query_cursor_win():
     import msvcrt
-    sys.stdout.write('\x1b[6n')
-    sys.stdout.flush()
-    buf = b''
-    deadline = time.monotonic() + 1
-    while time.monotonic() < deadline:
-        if not msvcrt.kbhit():
-            continue
-        ch = msvcrt.getch()
-        if ch == b'\x03':
-            raise KeyboardInterrupt
-        buf += ch
-        if ch == b'R':
-            break
-    else:
-        return None
+    # 默认 stdin 是 LINE+ECHO 模式，CPR 应答进不来且会被回显；
+    # 查询期间临时切 VT 输入模式，读完恢复（避免影响 input() 等行输入）
+    saved = _console_stdin_vt(True)
+    try:
+        sys.stdout.write('\x1b[6n')
+        sys.stdout.flush()
+        buf = b''
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            if not msvcrt.kbhit():
+                continue
+            ch = msvcrt.getch()
+            if ch == b'\x03':
+                raise KeyboardInterrupt
+            buf += ch
+            if ch == b'R':
+                break
+        else:
+            return None
+    finally:
+        _console_stdin_vt(False, saved)
     return _parse_cpr(buf)
 
 
@@ -163,31 +109,11 @@ def _parse_cpr(buf):
     return (int(m.group(1)), int(m.group(2))) if m else None
 
 
-def _parse_mouse(seq):
-    """
-    SGR 鼠标序列 [<b;x;yM：
-      btn 32-35（移动/拖动）→ ('hover', 列, 行)
-      btn 0-1（左/中键按下）→ ('click', 列, 行)
-      btn 2（右键按下）、3-5（释放）、64-67（滚轮）、
-      修饰键组合（128+）→ None（忽略）
-    """
-    m = re.match(rb'\[<(\d+);(\d+);(\d+)[Mm]', seq)
-    if not m:
-        return None
-    btn, col, row = int(m.group(1)), int(m.group(2)), int(m.group(3))
-    if 32 <= btn <= 35:
-        return ('hover', col, row)
-    if btn in (0, 1):
-        return ('click', col, row)
-    return None
-
-
 def read_key():
     """
     读取单个按键。返回：
       'esc' / 'enter' / 'backspace' / 'eof' / '?'（无法识别）
-      普通字符（'0'-'9'、'y'、'n' 等）
-      鼠标（启用鼠标报告后）：('click', 列, 行) 按下 / ('hover', 列, 行) 移动
+      普通字符（'0'-'9'、'y'、'n' 等）、方向键 'up' / 'down'
     Ctrl+C 抛 KeyboardInterrupt。
     """
     if os.name == 'nt':
@@ -209,8 +135,6 @@ def _read_key_win():
                 seq += msvcrt.getch()
             if not seq:
                 return 'esc'
-            if seq.startswith(b'[<'):
-                return _parse_mouse(seq) or '?'
             return {b'[A': 'up', b'[B': 'down', b'[C': 'right',
                     b'[D': 'left'}.get(seq, '?')
         if ch in (b'\r', b'\n'):
@@ -257,8 +181,6 @@ def _read_key_posix():
     if ch == b'\x1b':
         if not rest:
             return 'esc'
-        if rest.startswith(b'[<'):
-            return _parse_mouse(rest) or '?'
         return {b'[A': 'up', b'[B': 'down', b'[C': 'right',
                 b'[D': 'left'}.get(rest, '?')
     if ch in (b'\r', b'\n'):

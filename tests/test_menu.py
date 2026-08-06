@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-菜单选择：方向键 / 数字键 / 鼠标点击选项行。
+菜单选择：方向键 / 数字键 / 回车确认。
 
     python -m unittest discover tests
 """
@@ -24,7 +24,7 @@ def run_loop(keys_seq, cursor=(17, 1)):
 
 
 @contextlib.contextmanager
-def loop_io(keys_seq, cursor=(17, 1), mouse_status='ok'):
+def loop_io(keys_seq, cursor=(17, 1)):
     """运行 menu_loop 并暴露输出与内部 mock，供断言重绘序列/次数的测试复用"""
     import io
     from contextlib import redirect_stdout
@@ -35,165 +35,34 @@ def loop_io(keys_seq, cursor=(17, 1), mouse_status='ok'):
          mock.patch.object(menu, 'say'), \
          mock.patch('kuraya.keys.query_cursor', return_value=cursor) as qc, \
          mock.patch('kuraya.keys.read_key', side_effect=list(keys_seq)), \
-         mock.patch('kuraya.keys.enable_mouse'), \
-         mock.patch('kuraya.keys.disable_mouse'), \
-         mock.patch('kuraya.keys.terminal_mouse_status',
-                    return_value=mouse_status), \
          redirect_stdout(buffer):
         result = menu.menu_loop(lambda: None, OPTIONS)
     yield result, buffer.getvalue(), clear, qc
 
 
-class ClickSelection(unittest.TestCase):
-    """悬停高亮、点击执行；方向键/数字键不受影响"""
+class KeyboardSelection(unittest.TestCase):
+    """方向键/数字键导航 + 回车确认；选中行整行底色高亮"""
 
-    def row(self, r):
-        """n=3、光标行 17 时选项 0/1/2 所在行 = 12/13/14"""
-        return r
-
-    def hover(self, r):
-        return ('hover', 5, r)
-
-    def click(self, r):
-        return ('click', 5, r)
-
-    def test_hover_highlights_then_enter_confirms(self):
-        """悬停到选项 B 高亮（不执行），回车确认的是 B"""
-        self.assertEqual(run_loop([self.hover(13), 'enter']), '2')
-
-    def test_hover_switches_between_options(self):
-        """悬停 B 再悬停 C，高亮跟随；回车确认 C"""
-        self.assertEqual(
-            run_loop([self.hover(13), self.hover(14), 'enter']), '3')
-
-    def test_click_executes_target_row(self):
-        """点击选项行直接执行该行（悬停已提供高亮反馈）"""
-        self.assertEqual(run_loop([self.click(13)]), '2')
-
-    def test_hover_same_row_no_effect(self):
-        """悬停当前已高亮行不改变状态，回车仍确认原选项"""
-        self.assertEqual(run_loop([self.hover(12), 'enter']), '1')
-
-    def test_hover_same_row_does_not_redraw(self):
-        """同行使内移动不触发重绘（1003 事件流很密，全屏重绘会闪）"""
-        read = mock.Mock(side_effect=[self.hover(12), self.hover(12), 'enter'])
-        with mock.patch.object(menu, 'clear_screen') as clear, \
-             mock.patch.object(menu, 'brand'), \
-             mock.patch.object(menu, 'rule'), \
-             mock.patch.object(menu, 'say'), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(17, 1)), \
-             mock.patch('kuraya.keys.read_key', read), \
-             mock.patch('kuraya.keys.enable_mouse'), \
-             mock.patch('kuraya.keys.disable_mouse'):
-            result = menu.menu_loop(lambda: None, OPTIONS)
-        self.assertEqual(result, '1')
-        # 三次 read_key 均在第一次渲染后：同行使内 hover 未触发重绘
-        self.assertEqual(clear.call_count, 1)
-
-    def test_alt_screen_entered_and_restored(self):
-        """菜单进入备用屏幕（鼠标转发），退出恢复主屏"""
-        import io
-        from contextlib import redirect_stdout
-        buffer = io.StringIO()
-        with mock.patch.object(menu, 'clear_screen'), \
-             mock.patch.object(menu, 'brand'), \
-             mock.patch.object(menu, 'rule'), \
-             mock.patch.object(menu, 'say'), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(17, 1)), \
-             mock.patch('kuraya.keys.read_key', return_value='enter'), \
-             mock.patch('kuraya.keys.enable_mouse'), \
-             mock.patch('kuraya.keys.disable_mouse'), \
-             redirect_stdout(buffer):
-            menu.menu_loop(lambda: None, OPTIONS)
-        out = buffer.getvalue()
-        self.assertIn('\x1b[?1049h', out)
-        self.assertIn('\x1b[?1049l', out)
-        self.assertLess(out.index('\x1b[?1049h'),
-                        out.index('\x1b[?1049l'))
-
-    def test_click_blank_row_ignored(self):
-        """点击选项区之外（如顶部行）忽略，继续等待按键"""
-        self.assertEqual(run_loop([self.click(5), '2']), '2')
-
-    def test_hover_without_cursor_ignored(self):
-        """终端不支持光标查询时悬停/点击无法定位，忽略"""
-        self.assertEqual(run_loop([self.hover(13), '2'], cursor=None), '2')
-
-    def test_arrows_still_work(self):
+    def test_arrows_move_selection(self):
         self.assertEqual(run_loop(['down', 'enter']), '2')
 
-    def test_digits_still_work(self):
-        self.assertEqual(run_loop(['3']), '3')
+    def test_arrows_wrap_around(self):
+        """方向键到末尾循环回开头"""
+        self.assertEqual(run_loop(['down', 'down', 'down', 'enter']), '1')
 
-    def test_mouse_disabled_on_exit(self):
-        """退出菜单时关闭鼠标报告（引用计数成对）"""
-        with mock.patch.object(menu, 'clear_screen'), \
-             mock.patch.object(menu, 'brand'), \
-             mock.patch.object(menu, 'rule'), \
-             mock.patch.object(menu, 'say'), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(17, 1)), \
-             mock.patch('kuraya.keys.read_key', return_value='enter'), \
-             mock.patch('kuraya.keys.enable_mouse') as enable, \
-             mock.patch('kuraya.keys.disable_mouse') as disable:
-            menu.menu_loop(lambda: None, OPTIONS)
-        enable.assert_called_once()
-        disable.assert_called_once()
-
-    def test_cursor_hidden_during_redraw(self):
-        """整屏重绘期间隐藏光标，渲染完恢复（消除 Windows 重绘闪烁）"""
-        import io
-        from contextlib import redirect_stdout
-        buffer = io.StringIO()
-        with mock.patch.object(menu, 'clear_screen'), \
-             mock.patch.object(menu, 'brand'), \
-             mock.patch.object(menu, 'rule'), \
-             mock.patch.object(menu, 'say'), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(17, 1)), \
-             mock.patch('kuraya.keys.read_key', return_value='enter'), \
-             mock.patch('kuraya.keys.enable_mouse'), \
-             mock.patch('kuraya.keys.disable_mouse'), \
-             redirect_stdout(buffer):
-            menu.menu_loop(lambda: None, OPTIONS)
-        out = buffer.getvalue()
-        self.assertLess(out.index('\x1b[?25l'), out.index('\x1b[?25h'))
-
-    def test_warp_hint_shown_once(self):
-        """Warp 下提示开启 Mouse Reporting，且每会话只提示一次"""
-        menu._mouse_hint_shown = False
-        with loop_io(['enter'], mouse_status='warp-needs-toggle') as \
-                (result, out, clear, qc):
-            self.assertIn('Mouse Reporting', out)
-        menu._mouse_hint_shown = False
-
-    def test_warp_hint_cursor_baseline_adjusted(self):
-        """无鼠标终端打印提示后，光标恢复基准下移到提示行下方"""
-        menu._mouse_hint_shown = False
-        with loop_io(['down', 'enter'],
-                     mouse_status='warp-needs-toggle') as (result, out, clear, qc):
-            self.assertEqual(result, '2')
-            # 提示行输出一行后光标基准 +1：重绘后恢复到提示行下一行
-            self.assertIn('\x1b[18;1H', out)
-
-    def test_hover_cross_row_repaints_rows_only(self):
-        """跨行悬停只局部重绘两行：整屏不重绘、光标不重复查询"""
-        with loop_io([self.hover(13), self.hover(14), 'enter']) as \
-                (result, out, clear, qc):
+    def test_arrows_repaint_rows_only(self):
+        """方向键选择只局部重绘两行：整屏不重绘、光标不重复查询"""
+        with loop_io(['down', 'down', 'enter']) as (result, out, clear, qc):
             self.assertEqual(result, '3')
             self.assertEqual(clear.call_count, 1)   # 整屏只绘一次
-            self.assertEqual(qc.call_count, 1)      # CPR 只查一次（不再逐次查询）
+            self.assertEqual(qc.call_count, 1)      # CPR 只查一次
             # 局部重绘定位序列：选项 0/1/2 行 = 12/13/14
             for r in (12, 13, 14):
                 self.assertIn(f'\x1b[{r};1H\x1b[2K', out)
 
-    def test_arrows_repaint_rows_only(self):
-        """方向键选择同样只局部重绘，不整屏重绘"""
-        with loop_io(['down', 'down', 'enter']) as (result, out, clear, qc):
-            self.assertEqual(result, '3')
-            self.assertEqual(clear.call_count, 1)
-
     def test_selected_row_highlighted_with_background(self):
-        """悬停切到新行后，新选中行整行铺底色（精确色值 + 行尾填充）"""
-        with loop_io([self.hover(13), 'enter']) as (result, out, clear, qc):
+        """方向键移到新行后，新选中行整行铺底色（精确色值 + 行尾填充）"""
+        with loop_io(['down', 'enter']) as (result, out, clear, qc):
             self.assertEqual(result, '2')
             # 重绘序列中选中行用深金棕底，行尾 \x1b[K 填满整行再复位
             self.assertIn('\x1b[48;5;58m', out)
@@ -204,6 +73,25 @@ class ClickSelection(unittest.TestCase):
         with loop_io(['down', 'enter'], cursor=None) as (result, out, clear, qc):
             self.assertEqual(result, '2')
             self.assertGreater(clear.call_count, 1)  # 初次 + 方向键回退重绘
+
+    def test_digits_still_work(self):
+        self.assertEqual(run_loop(['3']), '3')
+
+    def test_esc_returns_none(self):
+        self.assertIsNone(run_loop(['esc']))
+
+    def test_alt_screen_entered_and_restored(self):
+        """菜单进入备用屏幕，退出恢复主屏"""
+        with loop_io(['enter']) as (result, out, clear, qc):
+            self.assertIn('\x1b[?1049h', out)
+            self.assertIn('\x1b[?1049l', out)
+            self.assertLess(out.index('\x1b[?1049h'),
+                            out.index('\x1b[?1049l'))
+
+    def test_cursor_hidden_during_redraw(self):
+        """整屏重绘期间隐藏光标，渲染完恢复（消除 Windows 重绘闪烁）"""
+        with loop_io(['enter']) as (result, out, clear, qc):
+            self.assertLess(out.index('\x1b[?25l'), out.index('\x1b[?25h'))
 
 
 if __name__ == '__main__':

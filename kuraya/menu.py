@@ -12,8 +12,6 @@ from . import launcher, picker, settings, setup, updater
 from .i18n import tr
 from .launcher import C, W, brand, dw, rule, say
 
-_mouse_hint_shown = False  # 终端鼠标提示每会话只显示一次
-
 
 def clear_screen():
     """清屏。终端不支持时退回打印空行，不让报错干扰界面"""
@@ -70,19 +68,13 @@ def shorten(path, room):
 def menu_loop(draw_header, options, selected=0, esc_label=None):
     """
     方向键导航 + 回车确认的选择器。options: [(key, label, desc)]。
-    返回选中项的 key；Esc / EOF 返回 None。数字键仍是快捷方式；
-    终端支持鼠标报告时，悬停选项行即高亮，点击选项行直接执行该行。
+    返回选中项的 key；Esc / EOF 返回 None。数字键仍是快捷方式。
     esc_label 描述 Esc 在此菜单的动作（主菜单为「退出」，子菜单为「返回」）。
     """
-    from .keys import (enable_mouse, disable_mouse, query_cursor, read_key,
-                       terminal_mouse_status)
-    global _mouse_hint_shown
+    from .keys import query_cursor, read_key
     esc_label = esc_label or tr('返回')
     n = len(options)
-    enable_mouse()
-    status = terminal_mouse_status()
-    # 切到备用屏幕（vim/htop 同款）：Warp 等终端只对 alt-screen 应用
-    # 转发鼠标事件，普通屏幕下点击会被终端 UI 拦截
+    # 切到备用屏幕（vim/htop 同款）：退出时恢复主屏原内容
     print('\x1b[?1049h', end='', flush=True)
     try:
         def option_text(i):
@@ -97,12 +89,11 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
             return (f'  {C.GREY}·{C.RESET} {C.GOLD}{key}{C.RESET}  {label}'
                     f'{gap}{C.FAINT}{desc}{C.RESET}')
 
-        hint = tr('↑↓ 选择 · 回车 确认 · 悬停高亮 · 点击执行 · Esc {action}',
-                  action=esc_label)
+        hint = tr('↑↓ 选择 · 回车 确认 · Esc {action}', action=esc_label)
 
         def draw_all():
             """整屏重绘。只在进入菜单与 CPR 不可用（回退）时调用：
-            菜单内容固定，之后悬停/方向键只局部重绘两行。
+            菜单内容固定，之后方向键只局部重绘两行。
             整屏重绘期间隐藏光标：Windows cls 逐行重画时
             光标在每行短暂停留，看起来像闪屏"""
             print('\x1b[?25l', end='', flush=True)
@@ -117,31 +108,16 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
             for i in range(n):
                 say(option_text(i))
             say()
-            # 完整换行输出：光标落在下一行行首，不悬停在行尾
-            # （悬停会让终端/Warp 把提示行当输入块，方向键被拦截）
+            # 完整换行输出：光标落在下一行行首
             print(f'  {C.FAINT}{hint}{C.RESET}')
             print('\x1b[?25h', end='', flush=True)
 
         draw_all()
-        # 光标在提示行的下一行（print 换行后）；
-        # 选项 i 所在行 = 光标行 - n - 2 + i，点击坐标由此映射到选项。
+        # 光标在提示行的下一行（print 换行后）；选项 i 所在行 =
+        # 光标行 - n - 2 + i，方向键局部重绘由此定位。
         # 只查一次：菜单内容固定，光标位置与行号映射此后不变，
-        # 跨行悬停不再反复 CPR 查询（\x1b[6n 应答要等几十毫秒）
+        # 不再反复 CPR 查询（\x1b[6n 应答要等几十毫秒）
         cursor = query_cursor()
-        # 终端鼠标提示放在光标查询之后输出，不影响点击行号映射
-        if status != 'ok' and not _mouse_hint_shown:
-            if status == 'warp-needs-toggle':
-                warn = tr('提示：Warp 需开启 Mouse Reporting（菜单 View '
-                          '→ Toggle Mouse Reporting）才能点击菜单')
-            else:
-                warn = tr('提示：当前终端不支持鼠标点击，请用方向键'
-                          '选择（或换 iTerm2/Warp）')
-            print(f'  {C.FAINT}{warn}{C.RESET}')
-            _mouse_hint_shown = True
-            if cursor:
-                # 提示行在光标查询后打印，实际光标已下移一行，
-                # 修正局部重绘的光标恢复基准（否则落回提示行上）
-                cursor = (cursor[0] + 1, 1)
 
         def repaint(i):
             """局部重绘第 i 个选项行，重绘后光标移回原位不打扰"""
@@ -151,23 +127,6 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
 
         while True:
             key = read_key()
-            if isinstance(key, tuple):
-                if not cursor:
-                    continue
-                _, _, row = key
-                hit = row - cursor[0] + n + 2
-                if key[0] == 'hover':
-                    # 悬停同一选项行内不重绘（1003 事件流很密）；
-                    # 跨行只重画旧/新两行，不再整屏重绘
-                    if 0 <= hit < n and hit != selected:
-                        old = selected
-                        selected = hit
-                        repaint(old)
-                        repaint(hit)
-                    continue
-                if 0 <= hit < n:
-                    return options[hit][0]  # 点击执行目标行
-                continue
             if key in ('up', 'down'):
                 old = selected
                 selected = (selected - 1 if key == 'up'
@@ -191,7 +150,6 @@ def menu_loop(draw_header, options, selected=0, esc_label=None):
                     if k == key:
                         return k
     finally:
-        disable_mouse()
         print('\x1b[?1049l', end='', flush=True)
 
 
@@ -264,17 +222,10 @@ def language_label(code):
 
 
 def pause():
-    """回车、Esc 或鼠标点击任意处返回菜单（悬停移动不退出）"""
-    from .keys import disable_mouse, enable_mouse, read_key
-    print(f'\n  {C.FAINT}{tr("按回车或点击鼠标返回菜单")}{C.RESET}')
-    enable_mouse()
-    try:
-        while True:
-            key = read_key()
-            if not isinstance(key, tuple) or key[0] != 'hover':
-                return
-    finally:
-        disable_mouse()
+    """回车或 Esc 返回菜单"""
+    from .keys import read_key
+    print(f'\n  {C.FAINT}{tr("按回车返回菜单")}{C.RESET}')
+    read_key()
 
 
 def language_menu():

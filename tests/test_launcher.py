@@ -285,7 +285,6 @@ class OfferOpenLibrary(unittest.TestCase):
         opened = mock.Mock()
         with mock.patch('kuraya.keys.read_key',
                         side_effect=['down', 'enter']), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
              mock.patch.object(launcher, 'open_library', opened), \
              redirect_stdout(buffer):
             launcher.offer_open_library(Path('lib'))
@@ -294,47 +293,12 @@ class OfferOpenLibrary(unittest.TestCase):
         self.assertIn('稍后再说', out)          # 第二项存在
         opened.assert_not_called()
 
-    def test_hover_highlights_then_enter_confirms(self):
-        """悬停选项 0（第 7 行）高亮不执行，回车确认打开"""
-        opened = mock.Mock()
-        with mock.patch('kuraya.keys.read_key',
-                        side_effect=[('hover', 5, 7), 'enter']), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
-             mock.patch.object(launcher, 'open_library', opened):
-            offered = launcher.offer_open_library(Path('lib'))
-        self.assertTrue(offered)
-        opened.assert_called_once()
-
-    def test_click_opens_library(self):
-        """点击选项 0（第 7 行）直接打开"""
-        opened = mock.Mock()
-        with mock.patch('kuraya.keys.read_key',
-                        return_value=('click', 5, 7)), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
-             mock.patch.object(launcher, 'open_library', opened):
-            offered = launcher.offer_open_library(Path('lib'))
-        self.assertTrue(offered)
-        opened.assert_called_once()
-
-    def test_hover_moves_selection(self):
-        """悬停选项 1（第 8 行）后回车确认的是选项 1（跳过不打开）；
-        旧实现悬停事件被忽略，回车会确认默认的选项 0（打开）——判别新旧"""
-        opened = mock.Mock()
-        with mock.patch('kuraya.keys.read_key',
-                        side_effect=[('hover', 5, 8), 'enter']), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
-             mock.patch.object(launcher, 'open_library', opened):
-            offered = launcher.offer_open_library(Path('lib'))
-        self.assertTrue(offered)
-        opened.assert_not_called()
-
     def test_alt_screen_entered_and_restored(self):
-        """选择器在备用屏幕渲染（Warp 鼠标转发），退出恢复主屏"""
+        """选择器在备用屏幕渲染，退出恢复主屏"""
         import io
         from contextlib import redirect_stdout
         buffer = io.StringIO()
         with mock.patch('kuraya.keys.read_key', return_value='esc'), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
              mock.patch.object(launcher, 'open_library'), \
              redirect_stdout(buffer):
             launcher.offer_open_library(Path('lib'))
@@ -343,40 +307,6 @@ class OfferOpenLibrary(unittest.TestCase):
         self.assertIn('\x1b[?1049l', out)
         # 首帧必须渲染在 alt-screen 内（先切屏后渲染），否则用户看到空屏
         self.assertGreater(out.index('稍后再说'), out.index('\x1b[?1049h'))
-
-    def test_click_later_skips(self):
-        """点击选项 1（第 8 行）跳过不打开"""
-        opened = mock.Mock()
-        with mock.patch('kuraya.keys.read_key',
-                        return_value=('click', 5, 8)), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
-             mock.patch.object(launcher, 'open_library', opened):
-            offered = launcher.offer_open_library(Path('lib'))
-        self.assertTrue(offered)
-        opened.assert_not_called()
-
-    def test_click_without_cursor_ignored(self):
-        """终端不支持光标查询时点击无法定位，忽略并继续等键"""
-        opened = mock.Mock()
-        read = mock.Mock(side_effect=[('click', 5, 8), 'esc'])
-        with mock.patch('kuraya.keys.read_key', read), \
-             mock.patch('kuraya.keys.query_cursor', return_value=None), \
-             mock.patch.object(launcher, 'open_library', opened):
-            offered = launcher.offer_open_library(Path('lib'))
-        self.assertTrue(offered)
-        opened.assert_not_called()
-        read.assert_has_calls([mock.call(), mock.call()])
-
-    def test_click_blank_ignored(self):
-        """点击空白行忽略，继续等键"""
-        opened = mock.Mock()
-        with mock.patch('kuraya.keys.read_key',
-                        side_effect=[('click', 5, 1), 'esc']), \
-             mock.patch('kuraya.keys.query_cursor', return_value=(10, 1)), \
-             mock.patch.object(launcher, 'open_library', opened):
-            offered = launcher.offer_open_library(Path('lib'))
-        self.assertTrue(offered)
-        opened.assert_not_called()
 
     def test_quiet_skips_prompt(self):
         read, opened, offered = self.run_all(quiet=True)

@@ -1,4 +1,4 @@
-﻿﻿# Kuraya 一键安装脚本 (Windows PowerShell 5.1+ / 7)。
+# Kuraya 一键安装脚本 (Windows PowerShell 5.1+ / 7)。
 # 从 GitHub Releases 拉取最新版, 装到 %LOCALAPPDATA%\Programs\Kuraya,
 # 并把该目录加入用户 PATH, 之后任意终端输入 kuraya 即可。
 # 用法:
@@ -17,21 +17,21 @@ $Msg = @{
     fetching    = '  获取最新版本...'
     downloading = '  下载 {0}'
     installing  = '  安装到 {0}'
-    path-added  = '  已把 Kuraya 加入用户 PATH, 请新开一个终端。'
+    'path-added'  = '  已把 Kuraya 加入用户 PATH, 请新开一个终端。'
     done        = '  完成! 新终端里运行 kuraya --version 验证。'
   }
   'zh-TW' = @{
     fetching    = '  取得最新版本...'
     downloading = '  下載 {0}'
     installing  = '  安裝到 {0}'
-    path-added  = '  已把 Kuraya 加入使用者 PATH，請新開一個終端。'
+    'path-added'  = '  已把 Kuraya 加入使用者 PATH，請新開一個終端。'
     done        = '  完成！在新終端裡執行 kuraya --version 驗證。'
   }
   'en' = @{
     fetching    = '  Fetching latest version...'
     downloading = '  Downloading {0}'
     installing  = '  Installing to {0}'
-    path-added  = '  Added Kuraya to your user PATH — open a new terminal.'
+    'path-added'  = '  Added Kuraya to your user PATH — open a new terminal.'
     done        = '  Done! Run kuraya --version in a new terminal to verify.'
   }
 }

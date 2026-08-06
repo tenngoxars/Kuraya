@@ -554,7 +554,7 @@ class NoticeText(unittest.TestCase):
 
     def test_mentions_new_and_current_version(self):
         """当前版本以旧缓存版本为基准，模拟用户还没升级"""
-        with mock.patch('kuraya.__version__', '0.1.0'):
+        with mock.patch('kuraya.updater.__version__', '0.1.0'):
             settings.save_update_state(str(int(time.time())), '9.9.9')
             notice = updater.text()
         self.assertIn('发现新版本 v9.9.9', notice)
@@ -564,7 +564,7 @@ class NoticeText(unittest.TestCase):
 
     def test_respects_current_version(self):
         """GitHub 版本等于当前版本时无提示（模拟已是最新）"""
-        with mock.patch('kuraya.__version__', '9.9.9'):
+        with mock.patch('kuraya.updater.__version__', '9.9.9'):
             settings.save_update_state(str(int(time.time())), '9.9.9')
             self.assertEqual(updater.text(), '')
 
@@ -578,8 +578,8 @@ class Show(unittest.TestCase):
 
     def test_prints_once_when_update(self):
         settings.save_update_state(str(int(time.time())), '9.9.9')
-        with mock.patch('kuraya.launcher.say') as say, \
-                mock.patch('kuraya.__version__', '0.1.0'):
+        with mock.patch('kuraya.console.say') as say, \
+                mock.patch('kuraya.updater.__version__', '0.1.0'):
             updater.show()
             updater.show()
         self.assertEqual(say.call_count, 1)
@@ -587,14 +587,14 @@ class Show(unittest.TestCase):
 
     def test_silent_in_quiet_mode(self):
         settings.save_update_state(str(int(time.time())), '9.9.9')
-        with mock.patch('kuraya.launcher.QUIET', True), \
-                mock.patch('kuraya.launcher.say') as say:
+        with mock.patch('kuraya.console.QUIET', True), \
+                mock.patch('kuraya.console.say') as say:
             updater.show()
         say.assert_not_called()
 
     def test_silent_without_update(self):
         settings.save_update_state(str(int(time.time())), '0.2.3')
-        with mock.patch('kuraya.launcher.say') as say:
+        with mock.patch('kuraya.console.say') as say:
             updater.show()
         say.assert_not_called()
 

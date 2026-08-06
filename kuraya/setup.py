@@ -7,8 +7,9 @@ import os
 import sys
 
 from . import picker, settings
+from .console import C, brand, box, info, say, spin
 from .i18n import tr
-from .launcher import C, ConfigError, brand, box, info, say, spin
+from .launcher import ConfigError
 
 
 def ask_library_path():

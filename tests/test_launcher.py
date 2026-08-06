@@ -253,7 +253,7 @@ class OfferOpenLibrary(unittest.TestCase):
                                              'failed': 0}), \
              mock.patch.object(launcher, 'do_clean'), \
              mock.patch.object(launcher, 'do_refresh', return_value=5), \
-             mock.patch.object(launcher, 'QUIET', quiet), \
+             mock.patch('kuraya.console.QUIET', quiet), \
              mock.patch('kuraya.keys.read_key', read), \
              mock.patch.object(launcher, 'open_library', opened), \
              redirect_stdout(buffer):

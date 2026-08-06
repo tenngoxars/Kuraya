@@ -12,7 +12,7 @@ import subprocess
 import sys
 import threading
 
-from . import protocol, settings
+from . import NAME, TAGLINE, KANJI, __version__, console, protocol, settings
 from .i18n import tr
 from .settings import FROZEN
 
@@ -31,11 +31,7 @@ def run_internal(kind, args):
     """
     # 打包后 PYTHONIOENCODING 不一定生效，须显式指定输出编码，
     # 否则父进程收到的中文路径会是乱码
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding='utf-8', errors='replace')
-        except (AttributeError, ValueError):
-            pass
+    console.ensure_utf8()
     if kind == 'gallery':
         sys.argv = ['gallery', *args]
         runpy.run_module('kuraya.gallery', run_name='__main__')
@@ -71,15 +67,10 @@ def do_play(raw_path):
     try:
         if player and os.path.isfile(player):
             subprocess.Popen([player, path])
-        elif os.name == 'nt':
-            os.startfile(path)
-        elif sys.platform == 'darwin':
-            subprocess.Popen(['open', path])
-        else:
-            subprocess.Popen(['xdg-open', path])
-        return OK
+            return OK
     except OSError:
         return 1
+    return OK if protocol.open_default(path) else 1
 
 
 def do_register(quiet=False):
@@ -192,11 +183,7 @@ def do_selftest():
     与影片本身不在支持范围内长得一模一样。这条命令把两者分开。
     """
     # 抓来的标题与演员名是日文与繁体中文，控制台默认编码放不下
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding='utf-8', errors='replace')
-        except (AttributeError, ValueError):
-            pass
+    console.ensure_utf8()
 
     from .media import javbus
     print(tr("  正在核对 javbus 的解析规则，需要联网……"))
@@ -254,8 +241,6 @@ def build_parser():
                         help=tr("输出各步骤的原始日志"))
     common.add_argument('--yes', action='store_true', default=argparse.SUPPRESS,
                         help=tr("结束后不等待按键，供计划任务调用"))
-
-    from . import KANJI, NAME, TAGLINE, __version__
 
     p = argparse.ArgumentParser(
         prog='kuraya', parents=[common],
@@ -333,9 +318,9 @@ def main():
 
     # 以下命令需要配置就绪
     from . import launcher, setup
-    launcher.enable_ansi()
-    launcher.QUIET = opt('quiet', False)
-    launcher.VERBOSE = opt('verbose', False)
+    console.enable_ansi()
+    console.QUIET = opt('quiet', False)
+    console.VERBOSE = opt('verbose', False)
 
     protocol.ensure_registered()
     code = OK

@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-刮削后清理源目录。
-
-三种情况分开处理：
-  已入库   视频与影片库中的文件是同一份（硬链接），源目录只是多余的一份链接，删除
-  未成功   视频仍是独立文件，说明没被处理，保留待重试
-  已处理   视频已被移走，只剩种子等残留，删除
+清理待整理目录：没有视频的文件夹删除，已入库（同一 inode）的文件夹移除，
+其余保留待重试。删除与保留以 [cleanup:rm]/[cleanup:linked]/[cleanup:kept]
+标记输出，供父进程解析。
 
 用法: python cleanup.py <待整理目录> [影片库目录]
 """
@@ -27,22 +24,14 @@ except ImportError:
     VIDEO_EXTS = ('.mp4', '.mkv', '.avi', '.wmv', '.ts', '.mov',
                   '.m4v', '.rmvb', '.iso', '.mpg', '.mpeg', '.flv')  # 与 media 同值
 
-if len(sys.argv) < 2:
-    raise SystemExit(tr('用法: python cleanup.py <待整理目录> [影片库目录]'))
-SOURCE = os.path.abspath(sys.argv[1])
-LIBRARY = os.path.abspath(sys.argv[2]) if len(sys.argv) > 2 else ''
 
-if not os.path.isdir(SOURCE):
-    raise SystemExit(tr('源目录不存在: {source}', source=SOURCE))
-
-
-def library_inodes():
+def library_inodes(source, library):
     """影片库中所有视频的 inode，用于判断源文件是否已入库"""
-    if not LIBRARY or not os.path.isdir(LIBRARY):
+    if not library or not os.path.isdir(library):
         return set()
     found = set()
-    src_real = os.path.realpath(SOURCE)
-    for root, dirs, files in os.walk(LIBRARY):
+    src_real = os.path.realpath(source)
+    for root, dirs, files in os.walk(library):
         if os.path.realpath(root).startswith(src_real):
             dirs[:] = []          # 不把待整理目录本身算进去
             continue
@@ -64,36 +53,60 @@ def videos_in(folder):
     return out
 
 
-in_library = library_inodes()
-removed = linked = kept = 0
+def clean(source, library):
+    """清理待整理目录，返回 (删除, 移除已入库, 保留)。逐项以标记输出"""
+    source = os.path.abspath(source)
+    in_library = library_inodes(source, library)
+    removed = linked = kept = 0
 
-for name in sorted(os.listdir(SOURCE)):
-    folder = os.path.join(SOURCE, name)
-    if not os.path.isdir(folder):
-        continue
+    for name in sorted(os.listdir(source)):
+        folder = os.path.join(source, name)
+        if not os.path.isdir(folder):
+            continue
 
-    videos = videos_in(folder)
+        videos = videos_in(folder)
 
-    if not videos:
-        shutil.rmtree(folder)
-        removed += 1
-        print(f'[cleanup:rm] {name}')
-        continue
+        if not videos:
+            shutil.rmtree(folder)
+            removed += 1
+            print(f'[cleanup:rm] {name}')
+            continue
 
-    # 视频还在：看它是不是已经在影片库里（同一 inode 即同一份文件）
-    try:
-        already = all(os.stat(v).st_ino in in_library for v in videos)
-    except OSError:
-        already = False
+        # 视频还在：看它是不是已经在影片库里（同一 inode 即同一份文件）
+        try:
+            already = all(os.stat(v).st_ino in in_library for v in videos)
+        except OSError:
+            already = False
 
-    if already and in_library:
-        shutil.rmtree(folder)
-        linked += 1
-        print(f'[cleanup:linked] {name}')
-    else:
-        kept += 1
-        print(f'[cleanup:kept] {name}')
+        if already and in_library:
+            shutil.rmtree(folder)
+            linked += 1
+            print(f'[cleanup:linked] {name}')
+        else:
+            kept += 1
+            print(f'[cleanup:kept] {name}')
 
-print(tr('\n清理完成：删除 {removed} 个，移除已入库的 {linked} 个，'
-          '保留待重试 {kept} 个。',
-          removed=removed, linked=linked, kept=kept))
+    print(tr('\n清理完成：删除 {removed} 个，移除已入库的 {linked} 个，'
+              '保留待重试 {kept} 个。',
+              removed=removed, linked=linked, kept=kept))
+    return removed, linked, kept
+
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) < 1:
+        print(tr('用法: python cleanup.py <待整理目录> [影片库目录]'))
+        return 2
+    source = os.path.abspath(args[0])
+    library = os.path.abspath(args[1]) if len(args) > 1 else ''
+
+    if not os.path.isdir(source):
+        print(tr('源目录不存在: {source}', source=source))
+        return 1
+
+    clean(source, library)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

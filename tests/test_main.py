@@ -70,7 +70,7 @@ class FallbackError(unittest.TestCase):
                                side_effect=RuntimeError('boom')), \
              mock.patch('kuraya.protocol.ensure_shell_app'), \
              mock.patch('kuraya.protocol.ensure_registered'), \
-             mock.patch('kuraya.launcher.enable_ansi'), \
+             mock.patch('kuraya.console.enable_ansi'), \
              mock.patch('kuraya.launcher.say'), \
              mock.patch('kuraya.launcher.spin'), \
              mock.patch('kuraya.updater.show'), \

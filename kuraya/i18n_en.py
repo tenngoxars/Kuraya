@@ -35,7 +35,7 @@ TABLE = {
     '若重新打开后版本未变，请运行安装命令：irm https://kuraya.app/install.ps1 | iex': 'If the version is still old after reopening, run the installer: irm https://kuraya.app/install.ps1 | iex',
     '页面尚未生成，请先执行「重建页面」': 'Page not generated yet — run "Rebuild page" first',
     '已在浏览器中打开': 'Opened in browser',
-    '打开失败：{exc}': 'Failed to open: {exc}',
+    '打开失败：{path}': 'Failed to open: {path}',
     '即将弹出选择窗口：{label}': 'A picker window is about to open: {label}',
     '等待选择': 'Waiting for selection',
     '无法打开选择窗口：{err}': 'Could not open the picker: {err}',

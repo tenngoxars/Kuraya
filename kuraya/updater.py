@@ -22,7 +22,8 @@ from pathlib import Path
 
 import requests
 
-from . import settings
+from . import __version__, console, settings
+from .console import C, enable_ansi
 from .i18n import tr
 from .settings import FROZEN
 
@@ -105,9 +106,6 @@ def latest(force=False):
 
 def text():
     """有新版本时返回提示文案，否则返回空串"""
-    from . import __version__
-    from .launcher import C
-
     remote = latest()
     if not remote or not is_newer(remote, __version__):
         return ''
@@ -127,26 +125,19 @@ def show():
     global _shown
     if _shown:
         return
-    from . import launcher
-    if launcher.QUIET:
+    if console.QUIET:
         return
     notice = text()
     if notice:
         _shown = True
-        launcher.say(notice)
+        console.say(notice)
 
 
 # ---------- 自更新 ----------
 def update(yes=False, quiet=False):
     """`kuraya update`：下载并安装最新版。返回进程退出码"""
     # 打包后 PYTHONIOENCODING 不一定生效，中文提示须显式指定输出编码
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding='utf-8', errors='replace')
-        except (AttributeError, ValueError):
-            pass
-    from . import __version__
-    from .launcher import C, enable_ansi
+    console.ensure_utf8()
     enable_ansi()
 
     if _brew_install():
@@ -265,7 +256,6 @@ def _finish(message, quiet):
     if quiet:
         print('updated=error')
     else:
-        from .launcher import C
         print(f'  {C.RED}✕{C.RESET} {message}')
 
 
@@ -274,7 +264,6 @@ def _brew_update(yes=False, quiet=False):
     Homebrew 安装的升级：委托 brew upgrade（保持 brew 状态一致）。
     返回进程退出码。
     """
-    from .launcher import C, enable_ansi
     enable_ansi()
 
     if not (yes or quiet):
@@ -302,7 +291,6 @@ def _brew_update(yes=False, quiet=False):
         print(f'  {C.RED}✕{C.RESET} {fail_msg}')
         return 1
     if already:
-        from . import __version__
         latest_msg = tr('已是最新版本 v{__version__}', __version__=__version__)
         print(f'  {C.GREEN}✓{C.RESET} {latest_msg}')
         return 0
@@ -354,7 +342,6 @@ def _run_brew_upgrade(quiet=False):
 
     if not tap_update() and not quiet:
         # formula 停在旧版时 upgrade 仍会「成功」装旧版，须让用户知情
-        from .launcher import C
         print(f'  {C.GREY}{tr("tap 刷新失败，可能不是最新版本")}{C.RESET}')
     result = upgrade()
     if result is None:

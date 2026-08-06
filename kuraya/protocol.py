@@ -109,6 +109,20 @@ def ensure_shell_app():
         return False
 
 
+def open_default(path):
+    """用系统默认程序打开路径。失败返回 False"""
+    try:
+        if os.name == 'nt':
+            os.startfile(path)
+        elif sys.platform == 'darwin':
+            subprocess.Popen(['open', path])
+        else:
+            subprocess.Popen(['xdg-open', path])
+        return True
+    except OSError:
+        return False
+
+
 def play_mode():
     """当前平台能否用 kuraya: 协议点封面播放，返回 'protocol' 或 'copy'。
     页面据此决定链接形态：协议不可用时降级为复制路径，不留点了没反应的封面。

@@ -8,9 +8,9 @@ import json
 import os
 import re
 
-from . import launcher, picker, settings, setup, updater
+from . import console, launcher, picker, settings, setup, updater
+from .console import C, W, brand, dw, rule, say
 from .i18n import tr
-from .launcher import C, W, brand, dw, rule, say
 
 
 def clear_screen():
@@ -294,7 +294,7 @@ def settings_menu():
 
 def run():
     """菜单主循环。返回退出码"""
-    launcher.enable_ansi()
+    console.enable_ansi()
 
     while True:
         cfg = settings.load()

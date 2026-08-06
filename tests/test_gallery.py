@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
 片库页面生成产物契约：分批渲染所需的结构必须存在于生成的 index.html。
+直接调用 gallery 函数（与生产路径一致），不走裸脚本子进程。
 
     python -m unittest discover tests
 """
-import subprocess
-import sys
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from kuraya import gallery
 
 NFO = """<?xml version="1.0" encoding="UTF-8" ?>
 <movie>
@@ -26,17 +27,16 @@ NFO = """<?xml version="1.0" encoding="UTF-8" ?>
 
 
 def build_page():
-    """在临时目录造最小影片库并运行 gallery 生成页面，返回 index.html 文本"""
+    """在临时目录造最小影片库并生成页面，返回 index.html 文本"""
     with tempfile.TemporaryDirectory() as tmp:
         cdir = Path(tmp) / '测试演员' / 'TEST-001'
         cdir.mkdir(parents=True)
         (cdir / 'TEST-001.nfo').write_text(NFO, encoding='utf-8')
         (cdir / 'TEST-001-poster.jpg').write_bytes(b'')
         (cdir / 'TEST-001.mp4').write_bytes(b'')
-        proc = subprocess.run(
-            [sys.executable, str(ROOT / 'kuraya/gallery.py'), tmp],
-            capture_output=True, text=True, cwd=ROOT, timeout=30)
-        assert proc.returncode == 0, proc.stderr
+        with redirect_stdout(io.StringIO()):
+            code = gallery.main([tmp])
+        assert code == 0
         return (Path(tmp) / 'index.html').read_text(encoding='utf-8')
 
 

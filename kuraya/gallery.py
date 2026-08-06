@@ -35,7 +35,8 @@ try:
     from kuraya.settings import VIDEO_EXTS
 except ImportError:
     # 直接以脚本方式运行时包不在搜索路径，按同值回退
-    VIDEO_EXTS = ('.mp4', '.avi', '.mkv', '.wmv', '.ts', '.mov', '.m4v', '.rmvb', '.iso', '.mpg')
+    VIDEO_EXTS = ('.mp4', '.mkv', '.avi', '.wmv', '.ts', '.mov',
+                  '.m4v', '.rmvb', '.iso', '.mpg', '.mpeg', '.flv')  # 与 media 同值
 
 def rel_url(*parts):
     return "/".join(quote(p) for p in parts)

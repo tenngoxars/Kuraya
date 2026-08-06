@@ -9,7 +9,17 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from kuraya import settings
+from kuraya import media, settings
+
+
+class VideoExts(unittest.TestCase):
+    """视频扩展名唯一来源（曾分叉成两份，.flv/.mpeg 被清理器漏认
+    导致整目录被误删）"""
+
+    def test_single_source_from_engine(self):
+        self.assertIs(settings.VIDEO_EXTS, media.VIDEO_EXTS)
+        self.assertIn('.flv', settings.VIDEO_EXTS)
+        self.assertIn('.mpeg', settings.VIDEO_EXTS)
 
 
 class UserConfigDir(unittest.TestCase):

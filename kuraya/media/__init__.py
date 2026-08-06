@@ -21,8 +21,9 @@ from .model import (CoverReady, Event, FailReason, Failed, Fetched, Found,
 
 __all__ = ['process', 'scan', 'Settings']
 
-VIDEO_EXTENSIONS = ('.mp4', '.mkv', '.avi', '.wmv', '.ts', '.mov',
-                    '.m4v', '.rmvb', '.iso', '.mpg', '.mpeg', '.flv')
+# 视频扩展名唯一来源：界面层（settings）引用此处，新增格式只改这一处
+VIDEO_EXTS = ('.mp4', '.mkv', '.avi', '.wmv', '.ts', '.mov',
+              '.m4v', '.rmvb', '.iso', '.mpg', '.mpeg', '.flv')
 
 
 def process(settings: Settings) -> Iterator[Event]:
@@ -53,7 +54,7 @@ def scan(source: Path, limit: int = 0) -> list[Path]:
 
     found = sorted(
         path for path in source.rglob('*')
-        if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS
+        if path.is_file() and path.suffix.lower() in VIDEO_EXTS
     )
     return found[:limit] if limit and limit > 0 else found
 

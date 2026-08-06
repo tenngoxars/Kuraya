@@ -8,6 +8,10 @@ import shutil
 import sys
 from pathlib import Path
 
+# 视频扩展名：定义在 media（引擎），cleanup/gallery/menu 从这里引用，
+# 新增格式只改 media 一处（曾分叉成两份导致 .flv/.mpeg 被清理器漏认而误删）
+from .media import VIDEO_EXTS
+
 FROZEN = getattr(sys, 'frozen', False)
 PKG_DIR = Path(__file__).resolve().parent
 
@@ -88,10 +92,6 @@ else:
 
 # 每部影片之间的间隔，避免把数据源当接口刷
 DEFAULT_SLEEP = 3.0
-
-# 视频扩展名，cleanup/gallery/menu 共用，新增格式只需改这一处
-VIDEO_EXTS = ('.mp4', '.avi', '.mkv', '.wmv', '.ts', '.mov', '.m4v', '.rmvb', '.iso', '.mpg')
-
 
 def _read():
     cfg = configparser.ConfigParser()

@@ -318,5 +318,20 @@ class OfferOpenLibrary(unittest.TestCase):
         self.assertFalse(offered)
 
 
+class LiveText(unittest.TestCase):
+    """进度/失败文案按当前语言即时翻译（曾模块级 tr 冻结在导入时刻）"""
+
+    def test_fail_text_follows_language(self):
+        try:
+            _i18n._lang = _i18n.ZH_CN
+            zh = launcher.fail_text(launcher.FailReason.NETWORK)
+            _i18n._lang = _i18n.EN
+            en = launcher.fail_text(launcher.FailReason.NETWORK)
+            self.assertEqual(zh, ('网络', '连不上数据源'))
+            self.assertNotEqual(en, zh)  # 判别性：冻结的模块级 tr 两者必相等
+        finally:
+            _i18n._lang = _i18n.ZH_CN
+
+
 if __name__ == '__main__':
     unittest.main()

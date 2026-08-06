@@ -60,5 +60,26 @@ class Uninstall(unittest.TestCase):
         rmtree.assert_not_called()
 
 
+class FallbackError(unittest.TestCase):
+    """未预料异常的兜底处理器能正常工作（曾因 setup 未导入而自身 NameError）"""
+
+    def test_fallback_shows_error(self):
+        with mock.patch.object(main.sys, 'argv', ['kuraya', 'rebuild']), \
+             mock.patch.object(main, 'FROZEN', False), \
+             mock.patch.object(main, 'resolve_paths',
+                               side_effect=RuntimeError('boom')), \
+             mock.patch('kuraya.protocol.ensure_shell_app'), \
+             mock.patch('kuraya.protocol.ensure_registered'), \
+             mock.patch('kuraya.launcher.enable_ansi'), \
+             mock.patch('kuraya.launcher.say'), \
+             mock.patch('kuraya.launcher.spin'), \
+             mock.patch('kuraya.updater.show'), \
+             mock.patch('kuraya.setup.show_error') as show:
+            code = main.main()
+        self.assertEqual(code, main.CONFIG_ERROR)
+        show.assert_called_once()
+        self.assertIn('boom', show.call_args.args[0])
+
+
 if __name__ == '__main__':
     unittest.main()

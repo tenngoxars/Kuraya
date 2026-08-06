@@ -332,7 +332,7 @@ def main():
         return do_config(args)
 
     # 以下命令需要配置就绪
-    from . import launcher
+    from . import launcher, setup
     launcher.enable_ansi()
     launcher.QUIET = opt('quiet', False)
     launcher.VERBOSE = opt('verbose', False)

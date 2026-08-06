@@ -24,7 +24,8 @@ try:
     from kuraya.settings import VIDEO_EXTS
 except ImportError:
     # 裸脚本运行（python cleanup.py <目录>）时包不在搜索路径
-    VIDEO_EXTS = ('.mp4', '.avi', '.mkv', '.wmv', '.ts', '.mov', '.m4v', '.rmvb', '.iso', '.mpg')
+    VIDEO_EXTS = ('.mp4', '.mkv', '.avi', '.wmv', '.ts', '.mov',
+                  '.m4v', '.rmvb', '.iso', '.mpg', '.mpeg', '.flv')  # 与 media 同值
 
 if len(sys.argv) < 2:
     raise SystemExit(tr('用法: python cleanup.py <待整理目录> [影片库目录]'))

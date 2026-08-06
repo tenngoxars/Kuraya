@@ -99,7 +99,7 @@ def offer_path_install():
         answer = ''
 
     settings.save(path_asked='1')      # 无论选什么都不再追问
-    if key != 'y' and key != 'Y':
+    if answer != 'y':                  # answer 已 lower()
         say(f'    {C.GREY}{tr("已跳过。以后想设置，运行 kuraya install 即可")}{C.RESET}')
         say()
         return

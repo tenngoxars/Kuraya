@@ -240,19 +240,22 @@ def run(kind, *args):
 
 
 # ---------- 各步骤 ----------
-PROBING_TEXT = {
-    Stage.COVER: tr("探测封面源"),
-    Stage.CROP: tr("裁剪竖版海报"),
-    Stage.ARCHIVE: tr("写入元数据并移动文件"),
-}
+def probing_text(stage, fallback):
+    """阶段文案按当前语言即时翻译（模块级 tr 会冻结在导入时刻，
+    切换语言后不生效）"""
+    return {Stage.COVER: tr("探测封面源"),
+            Stage.CROP: tr("裁剪竖版海报"),
+            Stage.ARCHIVE: tr("写入元数据并移动文件")}.get(stage, fallback)
 
-FAIL_TEXT = {
-    FailReason.NO_NUMBER: (tr("番号"), tr("未能识别番号")),
-    FailReason.NOT_FOUND: (tr("查询"), tr("未找到元数据")),
-    FailReason.NETWORK: (tr("网络"), tr("连不上数据源")),
-    FailReason.COVER_FAILED: (tr("封面"), tr("未能取得封面")),
-    FailReason.ARCHIVE_FAILED: (tr("入库"), tr("未能入库")),
-}
+
+def fail_text(reason):
+    """失败原因文案按当前语言即时翻译"""
+    return {FailReason.NO_NUMBER: (tr("番号"), tr("未能识别番号")),
+            FailReason.NOT_FOUND: (tr("查询"), tr("未找到元数据")),
+            FailReason.NETWORK: (tr("网络"), tr("连不上数据源")),
+            FailReason.COVER_FAILED: (tr("封面"), tr("未能取得封面")),
+            FailReason.ARCHIVE_FAILED: (tr("入库"), tr("未能入库")),
+            }[reason]
 
 
 def do_scrape(library, source, opts=None):
@@ -306,8 +309,8 @@ def do_scrape(library, source, opts=None):
                 detail = movie_detail(movie)
 
             case Probing(stage=stage):
-                spin.set(PROBING_TEXT.get(stage, tr("查询 {number} 的元数据",
-                                                    number=current)))
+                spin.set(probing_text(stage, tr("查询 {number} 的元数据",
+                                                number=current)))
 
             case CoverReady():
                 branch('├', tr("封面"), tr("已下载"), color=C.GREY)
@@ -325,7 +328,7 @@ def do_scrape(library, source, opts=None):
                 spin.set(tr("准备处理下一部"))
 
             case Failed(reason=reason):
-                label, text = FAIL_TEXT[reason]
+                label, text = fail_text(reason)
                 branch('└', label, text, color=C.RED)
                 stats['failed'] += 1
                 resolved = True

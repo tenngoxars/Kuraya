@@ -44,7 +44,10 @@ _4K = re.compile(r'(?<![A-Za-z0-9])4k(?![A-Za-z0-9])', re.I)
 _LEAK_UC = re.compile(r'[-_.]uc$', re.I)
 _LEAK_U = re.compile(r'[-_.]u$', re.I)
 _SUB_SEP = re.compile(r'[-_.]ch?$', re.I)       # -C / -CH
-_SUB_TAIL = re.compile(r'(?<=\d)ch$', re.I)     # XXX000ch
+# 无分隔符的裸 C 紧跟数字（XXX000C）也是下载站的中字标记：
+# 正规番号没有尾字母（javbus 无尾字母页面，2026-08-07 实测 7 个全 404），
+# C 出现在数字后只可能是标记，直接剥掉
+_SUB_TAIL = re.compile(r'(?<=\d)c(?:h)?$', re.I)  # XXX000C / XXX000ch
 
 # 中文字幕的文字线索
 _SUB_WORDS = ('中文', '字幕')

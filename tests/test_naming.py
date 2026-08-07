@@ -65,6 +65,24 @@ class Editions(unittest.TestCase):
         self.assertEqual(got.number, 'XXX-000')
         self.assertTrue(got.edition.chinese_sub)
 
+    def test_chinese_sub_bare_c_after_digits(self):
+        """下载站中字版常见 XXX-000C 命名：裸 C 紧跟数字。
+        正规番号没有尾字母（javbus 无此形态），C 只可能是中字标记"""
+        got = parse('XXX-000C.mp4')
+        self.assertEqual(got.number, 'XXX-000')
+        self.assertTrue(got.edition.chinese_sub)
+
+    def test_chinese_sub_bare_c_lowercase(self):
+        got = parse('XXX000c.mp4')
+        self.assertEqual(got.number, 'XXX-000')
+        self.assertTrue(got.edition.chinese_sub)
+
+    def test_bare_c_does_not_consume_uc(self):
+        """防回归锁（新旧代码均通过）：XXX000UC 的 C 属于 UC 流出标记
+        （无分隔符时不剥），不能被裸 C 规则拆成 XXX-000 + 残留 U——
+        保持无法识别，由数据源范围兜底"""
+        self.assertIsNone(parse('XXX000UC.mp4'))
+
     def test_chinese_sub_by_keyword(self):
         self.assertTrue(parse('YYYY-111 中文字幕.mp4').edition.chinese_sub)
 

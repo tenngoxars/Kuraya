@@ -487,7 +487,9 @@ while (Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAc
   Start-Sleep -Seconds 2
 }}
 # 阶段 2：进程已退出，重命名新目录就位。用户可能快速重开程序
-# （重开又锁上目录），所以重试直到成功或超时。
+# （重开又锁上目录），所以重试直到成功或超时。单独计时：
+# 阶段 1 可能已消耗大部分时限，重试预算不应被占用。
+$deadline = (Get-Date).AddMinutes(5)
 while ($true) {{
   try {{
     if (Test-Path -LiteralPath $old) {{ Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction Stop }}

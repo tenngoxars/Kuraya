@@ -11,7 +11,7 @@ import time
 
 from . import console, media, protocol, settings
 from .console import (C, W, brand, branch, box, clip, dw, info,
-                      movie_detail, pad, say, section, spin)
+                      movie_detail, say, section, spin)
 from .i18n import tr
 from .media.model import (CoverReady, FailReason, Failed, Fetched, Found,
                           PosterReady, Probing, Stage, Started, Stored)
@@ -90,11 +90,11 @@ def do_scrape(library, source, opts=None):
         if current and not resolved:
             stats['failed'] += 1
             if panel.active:
-                panel.set(4, console.branch_text('└', '失败', '未能入库',
-                                                 color=C.RED))
-                panel.set(5, console.panel_stat(stats, pending_count, tr))
+                panel.set(4, console.branch_text('└', tr('失败'),
+                                                 tr('未能入库'), color=C.RED))
+                panel.set(5, console.panel_stat(stats, pending_count))
             else:
-                branch('└', '失败', '未能入库', color=C.RED)
+                branch('└', tr('失败'), tr('未能入库'), color=C.RED)
         resolved = True
 
     config = media.Settings(
@@ -108,99 +108,99 @@ def do_scrape(library, source, opts=None):
     if not panel.active:
         spin.set(tr("正在扫描待处理影片"))
 
-    for event in media.process(config):
-        if console.VERBOSE:
-            say(f'{C.FAINT}    {event}{C.RESET}')
+    try:
+        for event in media.process(config):
+            if console.VERBOSE:
+                say(f'{C.FAINT}    {event}{C.RESET}')
 
-        match event:
-            case Found(count=count):
-                stats['found'] = count
-                if count == 0:
-                    panel.clear()        # 无影片：清掉面板区域不留空白
-                    spin.hide()
-                    info(tr("没有待处理的影片"))
+            match event:
+                case Found(count=count):
+                    stats['found'] = count
+                    if count == 0:
+                        panel.clear()        # 无影片：清掉面板区域不留空白
+                        spin.hide()
+                        info(tr("没有待处理的影片"))
 
-            case Started(number=number, index=index):
-                close_pending()
-                current, detail, resolved = number, '', config.dry_run
-                pending_count = index
-                tag = f'[{index}/{stats["found"] or "?"}]'
-                gap = W - dw(f'▸ {number}') - dw(tag) - 1
-                head = (f'   {C.GOLD}▸{C.RESET} {C.BOLD}{number}{C.RESET}'
-                        f'{" " * max(1, gap)}{C.GREY}{tag}{C.RESET}')
-                if panel.active:
-                    panel.set(0, clip(head, W + 2))   # 超长番号截断防折行
-                    panel.set(1, '')
-                    panel.set(2, '')
-                    panel.set(3, '')
-                    panel.set(4, '')
-                    panel.set(5, console.panel_stat(stats, index, tr))
-                else:
-                    say()
-                    say(head)
-                    spin.set(tr("查询 {number} 的元数据", number=number))
+                case Started(number=number, index=index):
+                    close_pending()
+                    current, detail, resolved = number, '', config.dry_run
+                    pending_count = index
+                    tag = f'[{index}/{stats["found"] or "?"}]'
+                    # 先截番号再拼 head：clip 不认 ANSI，截整行会把 [i/n] 吞掉
+                    number = clip(number, W - dw(tag) - 8)
+                    gap = W - dw(f'▸ {number}') - dw(tag) - 1
+                    head = (f'   {C.GOLD}▸{C.RESET} {C.BOLD}{number}{C.RESET}'
+                            f'{" " * max(1, gap)}{C.GREY}{tag}{C.RESET}')
+                    if panel.active:
+                        panel.set_many({0: head, 1: '', 2: '', 3: '', 4: '',
+                                        5: console.panel_stat(stats, index)})
+                    else:
+                        say()
+                        say(head)
+                        spin.set(tr("查询 {number} 的元数据", number=number))
 
-            case Fetched(movie=movie):
-                # 元数据这一行排在「入库」之前，先攒着
-                detail = movie_detail(movie)
+                case Fetched(movie=movie):
+                    # 元数据这一行排在「入库」之前，先攒着
+                    detail = movie_detail(movie)
 
-            case Probing(stage=stage):
-                if not panel.active:
-                    spin.set(probing_text(stage, tr("查询 {number} 的元数据",
-                                                    number=current)))
+                case Probing(stage=stage):
+                    if not panel.active:
+                        spin.set(probing_text(stage,
+                                              tr("查询 {number} 的元数据",
+                                                 number=current)))
 
-            case CoverReady():
-                if panel.active:
-                    panel.set(1, console.branch_text('├', tr("封面"),
-                                                     tr("已下载"),
-                                                     color=C.GREY))
-                else:
-                    branch('├', tr("封面"), tr("已下载"), color=C.GREY)
+                case CoverReady():
+                    if panel.active:
+                        panel.set(1, console.branch_text('├', tr("封面"),
+                                                         tr("已下载"),
+                                                         color=C.GREY))
+                    else:
+                        branch('├', tr("封面"), tr("已下载"), color=C.GREY)
 
-            case PosterReady():
-                if panel.active:
-                    panel.set(2, console.branch_text('├', tr("裁剪"),
-                                                     tr("已生成竖版海报"),
-                                                     color=C.GREY))
-                else:
-                    branch('├', tr("裁剪"), tr("已生成竖版海报"),
-                           color=C.GREY)
+                case PosterReady():
+                    if panel.active:
+                        panel.set(2, console.branch_text('├', tr("裁剪"),
+                                                         tr("已生成竖版海报"),
+                                                         color=C.GREY))
+                    else:
+                        branch('├', tr("裁剪"), tr("已生成竖版海报"),
+                               color=C.GREY)
 
-            case Stored(path=path, elapsed=elapsed):
-                stats['done'] += 1
-                if panel.active:
-                    if detail:
-                        panel.set(3, console.branch_text('├', tr("元数据"),
-                                                         detail))
-                    where = '\\'.join(str(path).replace('/', '\\').split('\\')[-2:])
-                    panel.set(4, console.branch_text('└', tr("入库"), where,
-                                                     right=f'{elapsed:.1f}s'))
-                    panel.set(5, console.panel_stat(stats, pending_count, tr))
-                else:
-                    if detail:
-                        branch('├', tr("元数据"), detail)
-                    where = '\\'.join(str(path).replace('/', '\\').split('\\')[-2:])
-                    branch('└', tr("入库"), where, right=f'{elapsed:.1f}s')
-                resolved = True
-                if not panel.active:
-                    spin.set(tr("准备处理下一部"))
+                case Stored(path=path, elapsed=elapsed):
+                    stats['done'] += 1
+                    if panel.active:
+                        if detail:
+                            panel.set(3, console.branch_text('├', tr("元数据"),
+                                                             detail))
+                        where = '\\'.join(str(path).replace('/', '\\').split('\\')[-2:])
+                        panel.set(4, console.branch_text('└', tr("入库"), where,
+                                                         right=f'{elapsed:.1f}s'))
+                        panel.set(5, console.panel_stat(stats, pending_count))
+                    else:
+                        if detail:
+                            branch('├', tr("元数据"), detail)
+                        where = '\\'.join(str(path).replace('/', '\\').split('\\')[-2:])
+                        branch('└', tr("入库"), where, right=f'{elapsed:.1f}s')
+                    resolved = True
+                    if not panel.active:
+                        spin.set(tr("准备处理下一部"))
 
-            case Failed(reason=reason):
-                label, text = fail_text(reason)
-                stats['failed'] += 1
-                if panel.active:
-                    panel.set(4, console.branch_text('└', label, text,
-                                                     color=C.RED))
-                    panel.set(5, console.panel_stat(stats, pending_count, tr))
-                else:
-                    branch('└', label, text, color=C.RED)
-                resolved = True
-                if not panel.active:
-                    spin.set(tr("准备处理下一部"))
-
-    close_pending()
-    spin.hide()
-    panel.end()
+                case Failed(reason=reason):
+                    label, text = fail_text(reason)
+                    stats['failed'] += 1
+                    if panel.active:
+                        panel.set(4, console.branch_text('└', label, text,
+                                                         color=C.RED))
+                        panel.set(5, console.panel_stat(stats, pending_count))
+                    else:
+                        branch('└', label, text, color=C.RED)
+                    resolved = True
+                    if not panel.active:
+                        spin.set(tr("准备处理下一部"))
+    finally:
+        close_pending()
+        spin.hide()
+        panel.end()
     return stats
 
 

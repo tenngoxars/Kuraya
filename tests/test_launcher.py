@@ -20,7 +20,6 @@ from kuraya import i18n as _i18n
 _i18n._lang = _i18n.ZH_CN  # 测试断言简体中文文案，先固定语言再导入被测模块
 
 from kuraya import launcher, setup
-from kuraya.i18n import tr
 from kuraya.media.model import (CoverReady, FailReason, Failed, Fetched, Found,
                                 Movie, PosterReady, Probing, Settings, Stage,
                                 Started, Stored)
@@ -395,10 +394,12 @@ class ScrapePanel(unittest.TestCase):
         self.assertEqual(out, '')
 
     def test_cpr_failure_falls_back(self):
-        """CPR 不应答（终端不支持）：面板不激活，回退逐行"""
+        """CPR 不应答（终端不支持）：面板不激活，回退逐行。
+        先写占位行再查 CPR，失败时占位行已输出（仅 6 个换行，无重绘）"""
         out, panel = self.panel(cursor=None)
         self.assertFalse(panel.active)
-        self.assertEqual(out, '')
+        self.assertEqual(out, '\n' * 6)
+        self.assertNotIn('\x1b[', out)
 
     def test_quiet_disables_panel(self):
         """QUIET 模式：面板不激活，无重绘输出"""
@@ -410,7 +411,7 @@ class ScrapePanel(unittest.TestCase):
         """统计行：成功/失败计数正确"""
         from kuraya import console
         stats = {'found': 3, 'done': 2, 'failed': 1}
-        text = console.panel_stat(stats, 3, tr)
+        text = console.panel_stat(stats, 3)
         self.assertIn('已处理 3/3', text)
         self.assertIn('成功 2', text)
         self.assertIn('失败 1', text)
@@ -419,7 +420,7 @@ class ScrapePanel(unittest.TestCase):
         """统计行恒显示失败项（方案要求 成功/失败/共 N 三件套）"""
         from kuraya import console
         stats = {'found': 3, 'done': 3, 'failed': 0}
-        text = console.panel_stat(stats, 3, tr)
+        text = console.panel_stat(stats, 3)
         self.assertIn('失败 0', text)
 
     def test_empty_library_clears_panel(self):
@@ -448,7 +449,7 @@ class ScrapePanel(unittest.TestCase):
             panel.start()
             stats = {'found': 1, 'done': 0, 'failed': 0}
             stats['failed'] += 1
-            panel.set(5, console.panel_stat(stats, 1, tr))
+            panel.set(5, console.panel_stat(stats, 1))
             panel.end()
         self.assertIn('失败 1', buffer.getvalue())
 

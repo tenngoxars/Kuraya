@@ -98,6 +98,7 @@ TABLE = {
     '新入库 {done} 部': '{done} newly archived',
     '已处理 {index}/{total}': 'processed {index}/{total}',
     '成功 {done}': '{done} ok',
+    '失败': 'Failed',
     '失败 {failed}': '{failed} failed',
     '失败 {failed} 部': '{failed} failed',
     '耗时 {elapsed:.0f}s': 'took {elapsed:.0f}s',

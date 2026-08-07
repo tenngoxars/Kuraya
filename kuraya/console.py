@@ -10,6 +10,7 @@ import time
 import unicodedata
 
 from . import NAME, KANJI, __version__
+from .i18n import tr
 
 W = 60  # 版面宽度
 
@@ -168,15 +169,17 @@ class ScrapePanel:
         self.lines = [''] * self.ROWS
 
     def start(self):
-        """进入面板模式：输出占位行并记录首行行号。失败则保持 inactive"""
+        """进入面板模式：先输出占位行再查光标定位首行。失败则保持 inactive"""
         if QUIET or VERBOSE or not sys.stdout.isatty():
             return
         from .keys import query_cursor
+        # 先写占位行再查光标：写完 6 行后光标落在面板底部，
+        # 首行 = 当前行 - ROWS（滚动/不滚动两种情况都对）
+        sys.stdout.write('\n' * self.ROWS)
+        sys.stdout.flush()
         pos = query_cursor()
         if not pos:
             return            # 终端不应答 CPR，回退逐行输出
-        sys.stdout.write('\n' * self.ROWS)
-        sys.stdout.flush()
         self.top = pos[0] - self.ROWS
         self.active = True
         self.render()
@@ -186,6 +189,15 @@ class ScrapePanel:
         if not self.active:
             return
         self.lines[index] = text
+        self.render()
+
+    def set_many(self, updates):
+        """一次更新多行（index: text），只重绘一次。
+        逐行 set() 在慢终端会闪（每次全屏重绘）"""
+        if not self.active:
+            return
+        for index, text in updates.items():
+            self.lines[index] = text
         self.render()
 
     def render(self):
@@ -198,7 +210,7 @@ class ScrapePanel:
 
     def end(self):
         """收尾：光标移到面板底部，面板内容保留在屏幕上。
-        clear=True 时先清空面板区域（无影片等无内容场景不留空白）"""
+        无内容场景（Found=0）用 clear() 清空区域"""
         if not self.active:
             return
         sys.stdout.write(f'\x1b[{self.top + self.ROWS};1H')
@@ -218,8 +230,8 @@ class ScrapePanel:
         self.active = False
 
 
-def panel_stat(stats, index, tr):
-    """面板统计行：已处理 i/n · 成功 x · 失败 y（tr 由调用方注入避免循环导入）"""
+def panel_stat(stats, index):
+    """面板统计行：已处理 i/n · 成功 x · 失败 y"""
     total = stats['found'] or '?'
     bits = [tr('已处理 {index}/{total}', index=index, total=total),
             tr('成功 {done}', done=stats['done']),

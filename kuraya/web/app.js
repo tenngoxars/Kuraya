@@ -71,19 +71,23 @@ function isNew(it) {
 }
 
 // ---------- 筛选维度 ----------
-const DIMS = [
+// 三个维度统一计算计数后再过滤：没有任何值的维度（如整库无导演）
+// 直接不出现，避免「导演 0」这种点开也是空的按钮
+const ALL_DIMS = [
   { key: "actor", label: t("dim.actor"), of: it => actorList(it) },
   { key: "studio", label: t("dim.studio"), of: it => it.studio ? [it.studio] : [] },
   { key: "director", label: t("dim.director"), of: it => it.director ? [it.director] : [] },
 ];
 
-for (const dim of DIMS) {
+for (const dim of ALL_DIMS) {
   const counts = new Map();
   DATA.forEach(it => dim.of(it).forEach(v =>
     counts.set(v, (counts.get(v) || 0) + 1)));
   dim.values = [...counts.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ja"));
 }
+
+const DIMS = ALL_DIMS.filter(d => d.values.length > 0);
 
 let activeDim = "actor";
 const active = { actor: null, studio: null, director: null };

@@ -132,6 +132,19 @@ class TopBar(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertIn(f'key: {key}', html)
 
+    def test_empty_dimensions_hidden_not_zeroed(self):
+        """判别性：整库无导演时若还渲染「导演 0」按钮，点开只有「全部」，
+        纯噪音——必须按实际计数过滤掉空维度"""
+        html = build_page()
+        self.assertIn('ALL_DIMS.filter(d => d.values.length > 0)', html)
+
+    def test_empty_library_does_not_break_chips(self):
+        """判别性：全部维度都为空（空库）时 DIMS 为空数组，
+        buildChips 会找不到 activeDim 而崩——必须按 DIMS 是否为空
+        提前返回，而不是依赖 activeDim 存在"""
+        html = build_page()
+        self.assertIn('if (!DIMS.length) { chipsEl.innerHTML = ""; return; }', html)
+
     def test_director_collected(self):
         """导演要能筛，打包字段里就得有它——顺序还必须与页面还原时一致"""
         html = build_page()

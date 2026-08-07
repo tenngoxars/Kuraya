@@ -7,6 +7,8 @@
 function buildChips() {
   // 预留给「更多 N ▾」按钮的宽度余量，chips 溢出即收进面板
   const MORE_RESERVE = 118;
+  // 空库（或全部维度无值）时没有可筛的东西，筛选行整体留空
+  if (!DIMS.length) { chipsEl.innerHTML = ""; return; }
   const dim = DIMS.find(d => d.key === activeDim);
   chipsEl.innerHTML = "";
 

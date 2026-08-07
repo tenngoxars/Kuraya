@@ -223,13 +223,14 @@ def update(yes=False, quiet=False):
                     if quiet:
                         print(f'updated={remote}')
                     else:
-                        later_msg = tr('安全软件拦截了直接替换，'
-                                       '已安排程序退出后自动完成更新')
+                        later_msg = tr('程序目录正被占用（资源管理器窗口或安全软件），'
+                                       '已安排自动完成更新')
                         print(f'  {C.GOLD}◈{C.RESET} {later_msg}')
-                        print(f'  {C.GREY}{tr("请退出本程序，稍候片刻再重新打开")}'
-                              f'{C.RESET}')
-                        fallback = tr('若重新打开后版本未变，请运行安装命令：'
-                                      'irm https://kuraya.app/install.ps1 | iex')
+                        close_msg = tr('请关闭程序所在文件夹的窗口，'
+                                       '程序退出后会自动完成更新')
+                        print(f'  {C.GREY}{close_msg}{C.RESET}')
+                        fallback = tr('若重新打开后版本未变，可到下载页手动下载解压：'
+                                      '{url}', url=RELEASES_URL)
                         print(f'  {C.GREY}{fallback}{C.RESET}')
                     return 0
             if app_old is not None:
@@ -448,13 +449,28 @@ def _replace_later(new_dir, target):
 
     ps = f"""$ErrorActionPreference = 'Stop'
 $log = '{ps_str(tmp / 'update.log')}'
-Start-Sleep -Seconds 3
 $target = '{ps_str(target)}'
 $new = '{ps_str(new_dir)}'
 $old = "$target.old"
+# 运行中的 exe 锁的是文件不是目录，重命名目录失败通常是
+# 资源管理器窗口停在程序目录里、或安全软件正在扫描。
+# 轮询重命名直到成功（用户关掉窗口/杀软扫完即通过），
+# 最多 5 分钟，超时按失败处理并留下日志。
+$deadline = (Get-Date).AddMinutes(5)
+while ($true) {{
+  try {{
+    if (Test-Path -LiteralPath $old) {{ Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction Stop }}
+    Rename-Item -LiteralPath $target -NewName ([IO.Path]::GetFileName($old)) -ErrorAction Stop
+    break
+  }} catch {{
+    if ((Get-Date) -gt $deadline) {{
+      Set-Content -LiteralPath $log -Value ('FAIL: ' + $_.Exception.Message) -Encoding UTF8
+      exit 1
+    }}
+    Start-Sleep -Seconds 2
+  }}
+}}
 try {{
-  if (Test-Path -LiteralPath $old) {{ Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue }}
-  Rename-Item -LiteralPath $target -NewName 'Kuraya.old' -ErrorAction Stop
   Move-Item -LiteralPath $new -Destination $target -ErrorAction Stop
   Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
   Set-Content -LiteralPath $log -Value 'OK' -Encoding UTF8
@@ -462,7 +478,7 @@ try {{
 }} catch {{
   if (Test-Path -LiteralPath $old) {{
     if (-not (Test-Path -LiteralPath $target)) {{
-      Rename-Item -LiteralPath $old -NewName 'Kuraya' -ErrorAction SilentlyContinue
+      Rename-Item -LiteralPath $old -NewName ([IO.Path]::GetFileName($target)) -ErrorAction SilentlyContinue
     }}
   }}
   Set-Content -LiteralPath $log -Value ('FAIL: ' + $_.Exception.Message) -Encoding UTF8

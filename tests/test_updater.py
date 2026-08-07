@@ -317,6 +317,24 @@ class ReplaceLater(unittest.TestCase):
         self.assertEqual(args[args.index('-File') + 1], str(script))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
 
+    def test_later_replace_retries_rename_not_fixed_sleep(self):
+        """脚本必须轮询重命名直到成功（判别性：旧版固定 Start-Sleep 3 秒
+        或等进程退出——都会在用户重新打开程序时失败）"""
+        tmp = Path(tempfile.mkdtemp())
+        new_dir = tmp / 'x' / 'Kuraya'
+        target = Path('/opt/Kuraya')
+        with mock.patch.object(updater.subprocess, 'Popen'):
+            ok = updater._replace_later(new_dir, target)
+        self.assertTrue(ok)
+        content = (tmp / 'replace.ps1').read_text(encoding='utf-8-sig')
+        # 轮询重命名（Rename-Item 在 while 循环内重试），而非固定等待
+        self.assertIn('while ($true)', content)
+        self.assertIn('Rename-Item -LiteralPath $target', content)
+        self.assertIn('$deadline', content)
+        self.assertNotIn('Get-Process', content)
+        self.assertNotIn('Start-Sleep -Seconds 3', content)
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+
     def test_update_fails_without_winerror5(self):
         """非拒绝访问错误不降级，正常报失败"""
         new_dir = Path(tempfile.mkdtemp())

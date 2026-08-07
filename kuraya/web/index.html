@@ -27,40 +27,42 @@
   </div>
   <div class="stats">
     <div><span class="stat-num">{{COUNT}}</span><span class="stat-lbl" data-i18n="stat.movies">部影片</span></div>
-    <div><span class="stat-num" id="statActress">—</span><span class="stat-lbl" data-i18n="stat.actress">位演员</span></div>
-    <div><span class="stat-num" id="statStudio">—</span><span class="stat-lbl" data-i18n="stat.studio">个厂商</span></div>
   </div>
+  <div class="langs" id="langs"></div>
 </div>
 
-<div class="toolbar">
-  <div class="search-wrap">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-    <input id="search" type="text" data-i18n-placeholder="search.placeholder"
-           placeholder="搜索演员 · 番号 · 厂商">
-    <button class="clear-btn" id="clearBtn" type="button" data-i18n-aria="clear" aria-label="清空">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-    </button>
-  </div>
-  <div class="select-wrap" id="sortWrap">
-    <button type="button" class="select-btn" id="sortBtn"
-            aria-haspopup="listbox" aria-expanded="false">
-      <span id="sortLabel" data-i18n="sort.date_desc">发行日期 · 新到旧</span>
-      <svg class="chev" width="10" height="6" viewBox="0 0 10 6" fill="none"
-           stroke="currentColor" stroke-width="1.5"><path d="M1 1l4 4 4-4"/></svg>
-    </button>
-    <div class="select-menu" id="sortMenu" role="listbox" data-i18n-aria="sort.by" aria-label="排序方式">
-      <button type="button" class="select-opt" role="option" aria-selected="true"
-              data-value="date_desc" data-i18n="sort.date_desc">发行日期 · 新到旧</button>
-      <button type="button" class="select-opt" role="option" aria-selected="false"
-              data-value="date_asc" data-i18n="sort.date_asc">发行日期 · 旧到新</button>
-      <button type="button" class="select-opt" role="option" aria-selected="false"
-              data-value="added_desc" data-i18n="sort.added_desc">入库时间 · 新到旧</button>
+<div class="sticky-block">
+  <div class="toolbar">
+    <div class="search-wrap">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="search" type="text" data-i18n-placeholder="search.placeholder"
+             placeholder="搜索演员 · 番号 · 厂商 · 导演">
+      <button class="clear-btn" id="clearBtn" type="button" data-i18n-aria="clear" aria-label="清空">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
     </div>
+    <div class="select-wrap" id="sortWrap">
+      <button type="button" class="select-btn" id="sortBtn"
+              aria-haspopup="listbox" aria-expanded="false">
+        <span id="sortLabel" data-i18n="sort.date_desc">发行日期 · 新到旧</span>
+        <svg class="chev" width="10" height="6" viewBox="0 0 10 6" fill="none"
+             stroke="currentColor" stroke-width="1.5"><path d="M1 1l4 4 4-4"/></svg>
+      </button>
+      <div class="select-menu" id="sortMenu" role="listbox" data-i18n-aria="sort.by" aria-label="排序方式">
+        <button type="button" class="select-opt" role="option" aria-selected="true"
+                data-value="date_desc" data-i18n="sort.date_desc">发行日期 · 新到旧</button>
+        <button type="button" class="select-opt" role="option" aria-selected="false"
+                data-value="date_asc" data-i18n="sort.date_asc">发行日期 · 旧到新</button>
+        <button type="button" class="select-opt" role="option" aria-selected="false"
+                data-value="added_desc" data-i18n="sort.added_desc">入库时间 · 新到旧</button>
+      </div>
+    </div>
+    <div class="pills" id="pills"></div>
+    <span id="count"></span>
   </div>
-  <span id="count"></span>
+  <div class="chips" id="chips"></div>
 </div>
 
-<div class="chips" id="chips"></div>
 <div class="grid" id="grid"></div>
 <div id="sentinel"></div>
 

@@ -1,88 +1,38 @@
-const DATA = {{DATA_JSON}};
+const PACK_FIELDS = {{PACK_FIELDS}};
+const LIB_BASE = {{LIB_BASE}};
+const PATH_SEP = {{PATH_SEP}};
+
+const DATA = {{DATA_JSON}}.map(row => {
+  const r = {};
+  PACK_FIELDS.forEach((f, i) => { r[f] = row[i]; });
+  const dir = r.dir || r.code;
+  return {
+    actress_folder: r.folder,
+    code: r.code,
+    studio: r.studio,
+    director: r.director,
+    date: r.date,
+    runtime: r.runtime,
+    actors: r.actors || r.folder,
+    poster_url: r.poster
+      ? [r.folder, dir, r.poster].map(encodeURIComponent).join("/") : "",
+    video_path: [LIB_BASE, r.folder, dir, r.video].join(PATH_SEP),
+    added_ts: r.added,
+  };
+});
 
 // "protocol" 时点封面直接唤起播放器；"copy" 时只能复制路径，
 // 因为注册自定义协议要写注册表，非 Windows 平台没有这条路
 const PLAY_MODE = "{{PLAY_MODE}}";
 
-// ---------- 界面语言：跟随浏览器语言，简中原文 / 繁中 / 英文 ----------
-const I18N = {
-  "zh-CN": {
-    "search.placeholder": "搜索演员 · 番号 · 厂商",
-    "sort.by": "排序方式",
-    "sort.date_desc": "发行日期 · 新到旧",
-    "sort.date_asc": "发行日期 · 旧到新",
-    "sort.added_desc": "入库时间 · 新到旧",
-    "stat.movies": "部影片",
-    "stat.actress": "位演员",
-    "stat.studio": "个厂商",
-    "chips.all": "全部",
-    "empty": "没有找到匹配的影片",
-    "clear": "清空",
-    "copied": "已复制路径",
-    "copyFailed": "复制失败，路径见悬停提示",
-  },
-  "zh-TW": {
-    "search.placeholder": "搜尋演員 · 番號 · 廠商",
-    "sort.by": "排序方式",
-    "sort.date_desc": "發行日期 · 新到舊",
-    "sort.date_asc": "發行日期 · 舊到新",
-    "sort.added_desc": "入庫時間 · 新到舊",
-    "stat.movies": "部影片",
-    "stat.actress": "位演員",
-    "stat.studio": "個廠商",
-    "chips.all": "全部",
-    "empty": "沒有找到相符的影片",
-    "clear": "清空",
-    "copied": "已複製路徑",
-    "copyFailed": "複製失敗，路徑見懸停提示",
-  },
-  "en": {
-    "search.placeholder": "Search actors · numbers · studios",
-    "sort.by": "Sort by",
-    "sort.date_desc": "Release date · new to old",
-    "sort.date_asc": "Release date · old to new",
-    "sort.added_desc": "Added date · new to old",
-    "stat.movies": "movies",
-    "stat.actress": "actresses",
-    "stat.studio": "studios",
-    "chips.all": "All",
-    "empty": "No matching movies",
-    "clear": "Clear",
-    "copied": "Path copied",
-    "copyFailed": "Copy failed — see tooltip",
-  },
-};
-
-// 繁体地区标记由 gallery.py 从 kuraya.i18n 注入，判定规则只有一份
-const TRADITIONAL_CODES = {{TRADITIONAL_CODES}};
-
-const UI_LANG = (() => {
-  const lang = (navigator.language || "").toLowerCase();
-  if (!lang.startsWith("zh")) return "en";
-  return TRADITIONAL_CODES.some(p => lang.startsWith(p))
-    ? "zh-TW" : "zh-CN";
-})();
-
-function t(key) {
-  return (I18N[UI_LANG] && I18N[UI_LANG][key]) || I18N["zh-CN"][key] || key;
-}
-
-// 把模板里的静态文案换成当前语言
-document.querySelectorAll("[data-i18n]").forEach(el => {
-  el.textContent = t(el.dataset.i18n);
-});
-document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
-  el.placeholder = t(el.dataset.i18nPlaceholder);
-});
-document.querySelectorAll("[data-i18n-aria]").forEach(el => {
-  el.setAttribute("aria-label", t(el.dataset.i18nAria));
-});
+// i18n.js 在本文件之前注入：t()/UI_LANG 已就绪（gallery.render 拼接顺序保证）
 
 const grid = document.getElementById("grid");
 const search = document.getElementById("search");
 const clearBtn = document.getElementById("clearBtn");
 const countEl = document.getElementById("count");
 const chipsEl = document.getElementById("chips");
+const pillsEl = document.getElementById("pills");
 const sortWrap = document.getElementById("sortWrap");
 const sortBtn = document.getElementById("sortBtn");
 const sortLabel = document.getElementById("sortLabel");
@@ -94,8 +44,8 @@ const SORT_NAMES = {
   date_asc: t("sort.date_asc"),
   added_desc: t("sort.added_desc"),
 };
-let sortKey = "date_desc";
-let activeActor = null;
+const DEFAULT_SORT = "date_desc";
+let sortKey = DEFAULT_SORT;
 
 // 分批渲染：首屏只建 PAGE 张卡片，滚动接近底部时追加下一批，
 // 避免大库一次性构建数千 DOM 节点卡死主线程
@@ -104,47 +54,47 @@ const FULL_RENDER = !("IntersectionObserver" in window);
 let result = [];     // 当前筛选/排序结果：render 算一次、loadMore 复用
 let rendered = 0;
 
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
 // 每部影片拆分出参演女优名单（多人合集用「、」分隔）
 function actorList(it) {
   return it.actors.split("、").map(s => s.trim()).filter(Boolean);
 }
 
-// 顶部统计（按去重后的演员名计）
-const allActorNames = new Set();
-DATA.forEach(d => actorList(d).forEach(n => allActorNames.add(n)));
-document.getElementById("statActress").textContent = allActorNames.size;
-document.getElementById("statStudio").textContent = new Set(DATA.map(d => d.studio).filter(Boolean)).size;
-
-// 演员筛选（只展示作品数 >= 2 的，避免一长串单部演员刷屏）
-const counts = {};
-DATA.forEach(d => actorList(d).forEach(n => { counts[n] = (counts[n] || 0) + 1; }));
-const topActors = Object.entries(counts)
-  .filter(([, n]) => n >= 2)
-  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ja"));
-
-function setActiveActor(name) {
-  activeActor = (activeActor === name) ? null : name;
-  buildChips();
-  render();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+const NEW_DAYS = 7;
+function isNew(it) {
+  return it.added_ts > Date.now() / 1000 - NEW_DAYS * 86400;
 }
 
-function buildChips() {
-  chipsEl.innerHTML = "";
-  const all = document.createElement("button");
-  all.className = "chip" + (activeActor === null ? " on" : "");
-  all.textContent = t("chips.all");
-  all.onclick = () => { activeActor = null; buildChips(); render(); };
-  chipsEl.appendChild(all);
+// ---------- 筛选维度 ----------
+const DIMS = [
+  { key: "actor", label: t("dim.actor"), of: it => actorList(it) },
+  { key: "studio", label: t("dim.studio"), of: it => it.studio ? [it.studio] : [] },
+  { key: "director", label: t("dim.director"), of: it => it.director ? [it.director] : [] },
+];
 
-  for (const [name, n] of topActors) {
-    const b = document.createElement("button");
-    b.className = "chip" + (activeActor === name ? " on" : "");
-    b.innerHTML = `${name}<span class="n">${n}</span>`;
-    b.onclick = () => setActiveActor(name);
-    chipsEl.appendChild(b);
-  }
+for (const dim of DIMS) {
+  const counts = new Map();
+  DATA.forEach(it => dim.of(it).forEach(v =>
+    counts.set(v, (counts.get(v) || 0) + 1)));
+  dim.values = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ja"));
 }
+
+let activeDim = "actor";
+const active = { actor: null, studio: null, director: null };
+
+const SEPARATORS = /[\s\-_.·・]/g;
+const squash = s => s.replace(SEPARATORS, "");
+DATA.forEach(it => {
+  it._fields = [it.code, it.actors, it.studio || "", it.director || "",
+                it.actress_folder].map(f => f.toLowerCase());
+  it._squashed = it._fields.map(squash);
+});
 
 function sortData(list, key) {
   const arr = [...list];
@@ -154,6 +104,23 @@ function sortData(list, key) {
     case "added_desc": arr.sort((a,b) => b.added_ts - a.added_ts); break;
   }
   return arr;
+}
+
+function visibleList() {
+  const q = search.value.trim().toLowerCase();
+  let list = DATA;
+
+  for (const dim of DIMS) {
+    const v = active[dim.key];
+    if (v) list = list.filter(it => dim.of(it).includes(v));
+  }
+  if (q) {
+    const qs = squash(q);
+    list = list.filter(it =>
+      it._fields.some(f => f.includes(q)) ||
+      (qs && it._squashed.some(f => f.includes(qs))));
+  }
+  return sortData(list, sortKey);
 }
 
 // 播放由 kuraya: 协议交给主程序处理。
@@ -197,22 +164,6 @@ function copyPath(it, card) {
   done(legacy());
 }
 
-function visibleList() {
-  const q = search.value.trim().toLowerCase();
-  let list = DATA;
-
-  if (activeActor) list = list.filter(it => actorList(it).includes(activeActor));
-  if (q) {
-    list = list.filter(it =>
-      it.actors.toLowerCase().includes(q) ||
-      it.code.toLowerCase().includes(q) ||
-      (it.studio||"").toLowerCase().includes(q) ||
-      it.actress_folder.toLowerCase().includes(q)
-    );
-  }
-  return sortData(list, sortKey);
-}
-
 function cardEl(it, i) {
   const card = document.createElement("a");
   card.className = "card";
@@ -229,14 +180,25 @@ function cardEl(it, i) {
   // 逐个错开出现，最多延迟到 24 个，避免长列表末尾等待过久
   card.style.animationDelay = Math.min(i, 24) * 22 + "ms";
   const cover = it.poster_url
-    ? `<img src="${it.poster_url}" loading="lazy" alt="">`
+    ? `<img src="${esc(it.poster_url)}" loading="lazy" alt="">`
     : `<div class="no-cover">NO COVER</div>`;
-  const actorsHtml = actorList(it)
-    .map(name => `<span class="actor-link" data-actor="${name}">${name}</span>`)
+  const badge = isNew(it) ? `<div class="badge-new">NEW</div>` : "";
+  const link = (dim, v) =>
+    `<span class="meta-link" data-dim="${dim}" data-val="${esc(v)}">${esc(v)}</span>`;
+  const actorsHtml = actorList(it).map(n => link("actor", n))
     .join('<span class="actor-sep">、</span>');
+  const subParts = [];
+  if (it.studio) {
+    subParts.push(`<span class="studio meta-link" data-dim="studio"`
+      + ` data-val="${esc(it.studio)}">${esc(it.studio)}</span>`);
+  }
+  if (it.director) subParts.push(link("director", it.director));
+  if (it.date) subParts.push(`<span class="date">${esc(it.date)}</span>`);
+
   card.innerHTML = `
     <div class="cover-wrap">
       ${cover}
+      ${badge}
       <div class="play"><span>
         ${PLAY_MODE === "protocol"
           ? `<svg width="13" height="15" viewBox="0 0 13 15" fill="#fff"><path d="M0 0l13 7.5L0 15z"/></svg>`
@@ -248,19 +210,16 @@ function cardEl(it, i) {
       ${PLAY_MODE === "protocol" ? "" : `<div class="card-hint"></div>`}
     </div>
     <div class="meta">
-      <div class="code">${it.code}</div>
+      <div class="code">${esc(it.code)}</div>
       <div class="actors">${actorsHtml}</div>
-      <div class="sub">
-        ${it.studio ? `<span class="studio">${it.studio}</span><span class="dot"></span>` : ""}
-        <span class="date">${it.date || ""}${it.runtime ? " · " + it.runtime + "min" : ""}</span>
-      </div>
+      <div class="sub">${subParts.join('<span class="dot"></span>')}</div>
     </div>
   `;
-  card.querySelectorAll(".actor-link").forEach(el => {
-    el.addEventListener("click", (e) => {
+  card.querySelectorAll(".meta-link").forEach(el => {
+    el.addEventListener("click", e => {
       e.preventDefault();
       e.stopPropagation();
-      setActiveActor(el.dataset.actor);
+      setFilter(el.dataset.dim, el.dataset.val);
     });
   });
   return card;
@@ -286,7 +245,7 @@ function loadMore() {
 function render() {
   result = visibleList();
   rendered = FULL_RENDER ? Infinity : PAGE;
-  countEl.textContent = `${result.length} / ${DATA.length}`;
+  countEl.textContent = dirty() ? `${result.length} / ${DATA.length}` : "";
   grid.innerHTML = "";
 
   if (!result.length) {
@@ -308,17 +267,19 @@ if (!FULL_RENDER) {
   }
 }
 
+
 function updateClearBtn() {
   clearBtn.classList.toggle("show", search.value.length > 0);
 }
 
-// 排序下拉：自定义面板以匹配页面深色风格，原生 select 的弹出列表无法定制
+// ---------- 排序下拉 ----------
 function setSort(key) {
   sortKey = key;
   sortLabel.textContent = SORT_NAMES[key];
   sortOpts.forEach(opt =>
     opt.setAttribute("aria-selected", String(opt.dataset.value === key)));
   closeSort();
+  buildPills();
   render();
 }
 
@@ -372,26 +333,35 @@ document.addEventListener("keydown", e => {
   }
 });
 
-// 清空按钮：清空搜索词 + 取消演员筛选 + 恢复默认排序，回到首页初始状态
-function resetToHome() {
-  search.value = "";
-  activeActor = null;
-  sortKey = "date_desc";
-  sortLabel.textContent = SORT_NAMES[sortKey];
-  sortOpts.forEach((opt, i) =>
-    opt.setAttribute("aria-selected", String(i === 0)));
+search.addEventListener("input", () => {
   updateClearBtn();
-  buildChips();
+  buildPills();
   render();
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
-
-search.addEventListener("input", () => { render(); updateClearBtn(); });
-clearBtn.addEventListener("click", () => { resetToHome(); search.focus(); });
+});
+clearBtn.addEventListener("click", () => { resetAll(); search.focus(); });
 document.addEventListener("keydown", (e) => {
   if (e.key === "/" && document.activeElement !== search) { e.preventDefault(); search.focus(); }
-  if (e.key === "Escape" && document.activeElement === search) { search.value = ""; search.blur(); render(); updateClearBtn(); }
+  if (e.key === "Escape" && document.activeElement === search) {
+    search.value = "";
+    search.blur();
+    updateClearBtn();
+    buildPills();
+    render();
+  }
 });
 
 buildChips();
+buildPills();
 render();
+
+// 窗口/容器宽度变化时重测筛选行。旧浏览器（与无 IntersectionObserver 的
+// FULL_RENDER 回退同一批老环境）通常也没有 ResizeObserver——首屏测量已
+// 在 buildChips 里完成，没有它只损失窗口变化后的重排，不致命
+if ("ResizeObserver" in window) {
+  let lastChipsW = chipsEl.clientWidth;
+  new ResizeObserver(() => {
+    if (chipsEl.clientWidth === lastChipsW) return;
+    lastChipsW = chipsEl.clientWidth;
+    buildChips();
+  }).observe(chipsEl);
+}

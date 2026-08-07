@@ -9,8 +9,6 @@ import json
 import os
 import sys
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
-from urllib.parse import quote
 
 # 多语言：裸脚本运行时包不在搜索路径，tr 回退原文、判定表用同值
 try:
@@ -47,16 +45,6 @@ except ImportError:
 SKIP = {"待整理", "Kuraya", "kuraya"}
 
 
-def rel_url(*parts):
-    return "/".join(quote(p) for p in parts)
-
-
-def abs_path(base, *parts):
-    # 播放用的绝对路径，交给 kuraya: 协议或供页面复制，格式按本机来
-    path = os.path.join(base, *parts)
-    return path.replace("/", "\\") if os.name == "nt" else path
-
-
 def read_web(name):
     with open(os.path.join(WEB_DIR, name), encoding="utf-8") as fp:
         return fp.read()
@@ -66,7 +54,6 @@ def collect(base):
     """扫描库目录收集影片数据，按番号去重并按发行日期新到旧排序"""
     base = os.path.abspath(base)
     items = []
-    now = datetime.now()
 
     for actress in sorted(os.listdir(base)):
         if actress in SKIP:
@@ -98,6 +85,7 @@ def collect(base):
 
             num = gt("num", code)
             studio = gt("studio")
+            director = gt("director")
             premiered = gt("premiered") or gt("year")
             runtime = gt("runtime")
             poster = gt("poster", f"{code}-poster.jpg")
@@ -119,20 +107,19 @@ def collect(base):
                 cand = [f for f in os.listdir(cdir) if f.lower().endswith("-poster.jpg")]
                 poster = cand[0] if cand else None
 
-            is_new = video_mtime and (now - datetime.fromtimestamp(video_mtime)) \
-                < timedelta(days=7)
-
             items.append({
                 "actress_folder": actress,
                 "code": num,
                 "studio": studio,
+                "director": director,
                 "date": premiered,
                 "runtime": runtime,
                 "actors": actor_str,
-                "poster_url": rel_url(actress, code, poster) if poster else "",
-                "video_path": abs_path(base, actress, code, video_file),
                 "added_ts": video_mtime or 0,
-                "is_new": is_new,
+                # 路径交给 pack/页面按基址现拼，这里不重复计算
+                "_dir": code,
+                "_video": video_file,
+                "_poster": poster or "",
             })
 
     # 多人共演的番号可能在好几个女优文件夹里都有nfo，按番号去重，
@@ -150,16 +137,68 @@ def collect(base):
     return deduped
 
 
+PACK_FIELDS = ["folder", "code", "dir", "studio", "director", "date",
+               "runtime", "actors", "poster", "video", "added"]
+
+
+def pack(items):
+    """
+    列式打包：字段名只写一次，行是纯数组。
+
+    array-of-objects 每条都重复一遍键名，几千部时光键名就占几十万字节；
+    影片库基址也在每条 video_path 里重复一遍。改成列式并把基址提到外面，
+    实测省七成。相对路径不在这里做百分号编码——一个中日文字符会膨胀成
+    九个字符，交给页面用 encodeURIComponent 现算。
+    """
+    rows = []
+    for it in items:
+        folder = it["actress_folder"]
+        col = {
+            "folder": folder,
+            "code": it["code"],
+            "dir": "" if it["_dir"] == it["code"] else it["_dir"],
+            "studio": it["studio"],
+            "director": it["director"],
+            "date": it["date"],
+            "runtime": it["runtime"],
+            "actors": "" if it["actors"] == folder else it["actors"],
+            "poster": it["_poster"],
+            "video": it["_video"],
+            "added": int(it["added_ts"]),
+        }
+        rows.append([col[f] for f in PACK_FIELDS])
+    return rows
+
+
+def script_json(obj):
+    """
+    注入 <script> 的 JSON 必须把 < 转义掉。番号/厂商/演员来自第三方数据源，
+    其中一个含 </script> 就会提前闭合脚本块——前端脚本被截断，整页只剩空白，
+    而且不报任何错。只转 < 就够：脚本块靠 </ 与 <!-- 才能被打断，
+    单独的 > 和 & 在脚本内容里没有语法意义。
+    \\u003c 在 JSON 与 JS 字符串里都还原成 <，值本身不变。
+    """
+    return json.dumps(obj, ensure_ascii=False).replace("<", "\\u003c")
+
+
 def render(base, items):
     """界面模板与数据分离：模板随包走，数据在此注入，输出为单文件页面"""
     html = read_web("index.html")
     html = html.replace("{{STYLE}}", read_web("style.css").rstrip("\n"))
-    script = read_web("app.js").replace(
-        "{{TRADITIONAL_CODES}}", json.dumps(TRADITIONAL_CODES))
+    # 注入顺序：i18n.js（t/UI_LANG 定义）→ app.js（数据解包+渲染）→
+    # filters.js（筛选交互，依赖前两者的顶层定义；同块函数声明提升）
+    script = "\n".join(read_web(n) for n in ("i18n.js", "app.js", "filters.js"))
+    script = script.replace("{{TRADITIONAL_CODES}}",
+                            json.dumps(TRADITIONAL_CODES))
+    script = script.replace("{{PACK_FIELDS}}", script_json(PACK_FIELDS))
+    script = script.replace("{{LIB_BASE}}", script_json(
+        base.replace("/", "\\") if os.name == "nt" else base))
+    script = script.replace("{{PATH_SEP}}",
+                            script_json("\\" if os.name == "nt" else "/"))
     html = html.replace("{{SCRIPT}}", script.rstrip("\n"))
     html = html.replace("{{COUNT}}", str(len(items)))
     html = html.replace("{{PLAY_MODE}}", play_mode)
-    return html.replace("{{DATA_JSON}}", json.dumps(items, ensure_ascii=False))
+    return html.replace("{{DATA_JSON}}", script_json(pack(items)))
 
 
 def main(argv=None):

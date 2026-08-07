@@ -240,8 +240,8 @@ def panel_stat(stats, index):
 
 
 # ---------- 输出组件 ----------
-def rule(char='─'):
-    say(f'{C.FAINT}  {char * W}{C.RESET}')
+def rule():
+    say(f'{C.FAINT}  {"─" * W}{C.RESET}')
 
 
 def box(lines, color=None):

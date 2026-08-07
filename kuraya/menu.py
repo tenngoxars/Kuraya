@@ -8,7 +8,7 @@ import json
 import os
 import re
 
-from . import console, launcher, picker, settings, setup, updater
+from . import cleanup, console, launcher, picker, settings, setup, updater
 from .console import C, W, brand, dw, rule, say
 from .i18n import tr
 
@@ -27,11 +27,8 @@ def clear_screen():
 
 
 def count_pending(source):
-    """待整理目录里有多少个视频文件"""
-    if not source or not os.path.isdir(source):
-        return 0
-    return sum(1 for _, _, files in os.walk(source)
-               for f in files if os.path.splitext(f)[1].lower() in settings.VIDEO_EXTS)
+    """待整理目录里有多少个视频文件（复用 cleanup 的扫描逻辑）"""
+    return len(cleanup.videos_in(source)) if source and os.path.isdir(source) else 0
 
 
 def count_library(library):
@@ -179,7 +176,7 @@ def edit_setting(label, key, kind='folder'):
         # 无桌面/无 tkinter 的环境改为手动输入，不把设置堵死
         pick_err = tr('无法打开选择窗口：{err}', err=err)
         say(f'    {C.RED}✕ {pick_err}{C.RESET}')
-        path = ask_path(label, kind)
+        path = setup.ask_path(label, kind=kind)
         if not path:
             say(f'    {C.GREY}{tr("已取消")}{C.RESET}')
             return
@@ -189,29 +186,6 @@ def edit_setting(label, key, kind='folder'):
     settings.save(**{key: path})
     saved = tr('已保存：{path}', path=path)
     say(f'    {C.GREEN}✓{C.RESET} {saved}')
-
-
-def ask_path(label, kind='folder'):
-    """选择框用不了时改为终端输入（与首次引导的手动输入同款）"""
-    manual_msg = tr('改为手动输入，路径支持 ~ 展开')
-    say(f'    {C.GREY}{manual_msg}{C.RESET}')
-    try:
-        path_prompt = tr('{label}路径（回车取消）', label=label)
-        raw = input(f'  {path_prompt} {C.GOLD}›{C.RESET} ').strip().strip('"\'')
-    except (EOFError, KeyboardInterrupt):
-        return ''
-    if not raw:
-        return ''
-    path = os.path.expanduser(raw)
-    if kind == 'folder' and not os.path.isdir(path):
-        missing = tr('目录不存在：{path}', path=path)
-        say(f'    {C.RED}✕{C.RESET} {missing}')
-        return ''
-    if kind == 'file' and not os.path.isfile(path):
-        missing = tr('文件不存在：{path}（留空可使用系统默认播放器）', path=path)
-        say(f'    {C.RED}✕{C.RESET} {missing}')
-        return ''
-    return path
 
 
 def language_label(code):

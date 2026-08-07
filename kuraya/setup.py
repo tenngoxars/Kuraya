@@ -12,9 +12,10 @@ from .i18n import tr
 from .launcher import ConfigError
 
 
-def ask_path(label, set_cmd=None):
+def ask_path(label, set_cmd=None, kind='folder'):
     """
     选择框用不了时改为在终端里输入。set_cmd 非空时附带命令行恢复提示。
+    kind 为 'folder'（目录校验）或 'file'（播放器文件校验）。
 
     装成命令行工具的场景下这不是退路而是常态：macOS 的 Homebrew Python 默认不带
     tkinter，服务器上更是连桌面都没有。让人去手动创建一个还不存在的配置文件，
@@ -35,8 +36,12 @@ def ask_path(label, set_cmd=None):
         return ''
 
     path = os.path.expanduser(raw)
-    if not os.path.isdir(path):
+    if kind == 'folder' and not os.path.isdir(path):
         missing = tr('目录不存在：{path}', path=path)
+        say(f'    {C.RED}✕{C.RESET} {missing}')
+        return ''
+    if kind == 'file' and not os.path.isfile(path):
+        missing = tr('文件不存在：{path}（留空可使用系统默认播放器）', path=path)
         say(f'    {C.RED}✕{C.RESET} {missing}')
         return ''
     return path

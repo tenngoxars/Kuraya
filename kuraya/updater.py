@@ -229,8 +229,8 @@ def update(yes=False, quiet=False):
                         later_msg = tr('程序目录正被占用，'
                                        '已安排程序退出后自动完成更新')
                         print(f'  {C.GOLD}◈{C.RESET} {later_msg}')
-                        close_msg = tr('请退出本程序，'
-                                       '程序退出后会自动完成更新')
+                        close_msg = tr('请退出本程序，稍候几秒后再打开，'
+                                       '更新会自动完成')
                         print(f'  {C.GREY}{close_msg}{C.RESET}')
                         if _installer_installed(target):
                             fallback = tr('若重新打开后版本未变，请运行安装命令：'

@@ -31,7 +31,7 @@ TABLE = {
     '选择播放器程序': 'Choose the player program',
     '请选择「设置」重新指定影片库位置': 'Choose "Settings" to point at the library again',
     '程序目录正被占用，已安排程序退出后自动完成更新': 'The program folder is in use — the update will finish after the program exits',
-    '请退出本程序，程序退出后会自动完成更新': 'Exit the program — the update finishes automatically after that',
+    '请退出本程序，稍候几秒后再打开，更新会自动完成': 'Exit the program, wait a few seconds, then reopen — the update finishes on its own',
     '若重新打开后版本未变，请运行安装命令：irm https://kuraya.app/install.ps1 | iex': 'If the version is still old after reopening, run the installer: irm https://kuraya.app/install.ps1 | iex',
     '若重新打开后版本未变，可到下载页手动下载解压：{url}': 'If the version is still old after reopening, download and extract it manually from: {url}',
     '页面尚未生成，请先执行「重建页面」': 'Page not generated yet — run "Rebuild page" first',

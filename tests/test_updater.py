@@ -317,21 +317,24 @@ class ReplaceLater(unittest.TestCase):
         self.assertEqual(args[args.index('-File') + 1], str(script))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
 
-    def test_later_replace_retries_rename_not_fixed_sleep(self):
-        """脚本必须轮询重命名直到成功（判别性：旧版固定 Start-Sleep 3 秒
-        或等进程退出——都会在用户重新打开程序时失败）"""
+    def test_later_replace_waits_exit_then_retries_rename(self):
+        """脚本两阶段：先等进程退出（Get-Process），再重试重命名（while）。
+        判别性：旧版固定 Start-Sleep 3 秒/纯进程等待都会失败"""
         tmp = Path(tempfile.mkdtemp())
         new_dir = tmp / 'x' / 'Kuraya'
         target = Path('/opt/Kuraya')
-        with mock.patch.object(updater.subprocess, 'Popen'):
+        with mock.patch.object(updater.sys, 'platform', 'win32'), \
+             mock.patch.object(updater.subprocess, 'Popen'):
             ok = updater._replace_later(new_dir, target)
         self.assertTrue(ok)
         content = (tmp / 'replace.ps1').read_text(encoding='utf-8-sig')
-        # 轮询重命名（Rename-Item 在 while 循环内重试），而非固定等待
+        # 阶段 1：等进程退出（运行中的 exe 锁目录，重命名必被拒）
+        self.assertIn('Get-Process', content)
+        self.assertIn('Kuraya.exe', content)
+        # 阶段 2：进程退出后重试重命名（防用户快速重开）
         self.assertIn('while ($true)', content)
         self.assertIn('Rename-Item -LiteralPath $target', content)
         self.assertIn('$deadline', content)
-        self.assertNotIn('Get-Process', content)
         self.assertNotIn('Start-Sleep -Seconds 3', content)
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
 
@@ -350,6 +353,34 @@ class ReplaceLater(unittest.TestCase):
                 mock.patch.object(updater, '_replace',
                                   side_effect=updater.UpdateError('x')):
             self.assertEqual(updater.update(yes=True), 1)
+
+
+class InstallerDetection(unittest.TestCase):
+    """安装形态检测：install.ps1 装的目录给安装命令提示，解压版给下载页"""
+
+    def installed(self, target, local_appdata):
+        with mock.patch.object(updater.os, 'name', 'nt'), \
+             mock.patch.dict(updater.os.environ,
+                             {'LOCALAPPDATA': local_appdata}):
+            return updater._installer_installed(target)
+
+    def test_programs_kuraya_is_installer(self):
+        """install.ps1 安装形态：%LOCALAPPDATA%\\Programs\\Kuraya"""
+        base = '/Users/me/AppData/Local'
+        self.assertTrue(
+            self.installed(f'{base}/Programs/Kuraya', base))
+
+    def test_arbitrary_folder_is_extracted(self):
+        """解压版：任意目录不是安装形态"""
+        self.assertFalse(
+            self.installed('/Users/me/Downloads/Kuraya',
+                           '/Users/me/AppData/Local'))
+
+    def test_non_windows_false(self):
+        """非 Windows 恒为 False（brew 走自己的分支）"""
+        with mock.patch.object(updater.os, 'name', 'posix'):
+            self.assertFalse(
+                updater._installer_installed(Path('/opt/Kuraya')))
 
 
 class Replace(unittest.TestCase):

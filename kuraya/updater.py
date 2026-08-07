@@ -215,7 +215,7 @@ def update(yes=False, quiet=False):
             _replace(new, target)
         except UpdateError as exc:
             if sys.platform == 'win32' and getattr(exc, 'winerror', None) == 5:
-                # 安全软件拦截程序自修改：安排独立进程在程序退出后替换
+                # 目录被占用（运行中的 exe/杀软）：安排独立进程在程序退出后替换
                 if _replace_later(new, target):
                     if app_old is not None:
                         shutil.rmtree(app_target, ignore_errors=True)
@@ -223,14 +223,18 @@ def update(yes=False, quiet=False):
                     if quiet:
                         print(f'updated={remote}')
                     else:
-                        later_msg = tr('程序目录正被占用（资源管理器窗口或安全软件），'
-                                       '已安排自动完成更新')
+                        later_msg = tr('程序目录正被占用，'
+                                       '已安排程序退出后自动完成更新')
                         print(f'  {C.GOLD}◈{C.RESET} {later_msg}')
-                        close_msg = tr('请关闭程序所在文件夹的窗口，'
+                        close_msg = tr('请退出本程序，'
                                        '程序退出后会自动完成更新')
                         print(f'  {C.GREY}{close_msg}{C.RESET}')
-                        fallback = tr('若重新打开后版本未变，可到下载页手动下载解压：'
-                                      '{url}', url=RELEASES_URL)
+                        if _installer_installed(target):
+                            fallback = tr('若重新打开后版本未变，请运行安装命令：'
+                                          'irm https://kuraya.app/install.ps1 | iex')
+                        else:
+                            fallback = tr('若重新打开后版本未变，可到下载页'
+                                          '手动下载解压：{url}', url=RELEASES_URL)
                         print(f'  {C.GREY}{fallback}{C.RESET}')
                     return 0
             if app_old is not None:
@@ -371,6 +375,20 @@ def _brew_install():
     return 'Cellar' in parts and 'kuraya' in parts
 
 
+def _installer_installed(target):
+    """install.ps1 安装形态：目录固定在 %LOCALAPPDATA%\\Programs\\Kuraya。
+    用于更新失败时给对应形态的恢复提示（解压版没有安装脚本）"""
+    if os.name != 'nt':
+        return False
+    programs = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Programs')
+    target_real = os.path.normcase(os.path.abspath(str(target)))
+    programs_real = os.path.normcase(os.path.abspath(programs))
+    try:
+        return os.path.commonpath([target_real, programs_real]) == programs_real
+    except ValueError:          # 不同盘符时 commonpath 抛错
+        return False
+
+
 def _asset_url(version):
     """按平台与架构拼安装包地址。发行版没有的架构组合直接报错"""
     machine = platform.machine().lower()
@@ -437,12 +455,17 @@ def _download(version):
 
 def _replace_later(new_dir, target):
     """
-    延迟替换：安全软件拦截程序自修改时，写一个独立 PowerShell 脚本，
-    由它在程序退出后完成替换（独立进程通常不被行为检测拦截）。
+    延迟替换：程序退出后由独立 PowerShell 脚本完成目录替换。
+
+    直接替换失败（WinError 5）通常因为运行中的 exe 锁着目录——
+    Windows 上进程持有的 exe 文件会阻止其所在目录被重命名。
+    脚本分两阶段：先等程序退出（轮询进程消失），再重命名新目录就位；
+    用户可能快速重开程序，所以重命名阶段也带重试与超时。
     返回是否已安排。临时目录保留给脚本使用，脚本完成后自行清理。
     """
     tmp = new_dir.parent.parent
     script = tmp / 'replace.ps1'
+    exe_name = 'Kuraya.exe' if sys.platform == 'win32' else 'Kuraya'
 
     def ps_str(path):
         return str(path).replace("'", "''")
@@ -452,11 +475,19 @@ $log = '{ps_str(tmp / 'update.log')}'
 $target = '{ps_str(target)}'
 $new = '{ps_str(new_dir)}'
 $old = "$target.old"
-# 运行中的 exe 锁的是文件不是目录，重命名目录失败通常是
-# 资源管理器窗口停在程序目录里、或安全软件正在扫描。
-# 轮询重命名直到成功（用户关掉窗口/杀软扫完即通过），
-# 最多 5 分钟，超时按失败处理并留下日志。
+$exe = '{ps_str(target / exe_name)}'
+# 阶段 1：等程序退出。运行中的 exe 锁着目录，重命名必被拒。
+# 提示用户退出后即通过；最多等 5 分钟，超时按失败处理并留日志。
 $deadline = (Get-Date).AddMinutes(5)
+while (Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAction SilentlyContinue) {{
+  if ((Get-Date) -gt $deadline) {{
+    Set-Content -LiteralPath $log -Value 'FAIL: timed out waiting for the program to exit' -Encoding UTF8
+    exit 1
+  }}
+  Start-Sleep -Seconds 2
+}}
+# 阶段 2：进程已退出，重命名新目录就位。用户可能快速重开程序
+# （重开又锁上目录），所以重试直到成功或超时。
 while ($true) {{
   try {{
     if (Test-Path -LiteralPath $old) {{ Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction Stop }}

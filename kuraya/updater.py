@@ -214,8 +214,11 @@ def update(yes=False, quiet=False):
         try:
             _replace(new, target)
         except UpdateError as exc:
-            if sys.platform == 'win32' and getattr(exc, 'winerror', None) == 5:
-                # 目录被占用（运行中的 exe/杀软）：安排独立进程在程序退出后替换
+            winerror = getattr(exc, 'winerror', None)
+            # 5 = 拒绝访问（运行中的 exe/杀软锁目录），32 = 共享冲突
+            # （资源管理器窗口停在目录里）。两者都属「占用」而非致命，
+            # 安排独立进程在程序退出后替换。
+            if sys.platform == 'win32' and winerror in (5, 32):
                 if _replace_later(new, target):
                     if app_old is not None:
                         shutil.rmtree(app_target, ignore_errors=True)
@@ -477,8 +480,9 @@ $new = '{ps_str(new_dir)}'
 $old = "$target.old"
 $exe = '{ps_str(target / exe_name)}'
 # 阶段 1：等程序退出。运行中的 exe 锁着目录，重命名必被拒。
-# 提示用户退出后即通过；最多等 5 分钟，超时按失败处理并留日志。
-$deadline = (Get-Date).AddMinutes(5)
+# 提示用户退出后即通过；最长等 30 分钟（用户可能正在用，不急于退），
+# 超时按失败处理并留日志。
+$deadline = (Get-Date).AddMinutes(30)
 while (Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAction SilentlyContinue) {{
   if ((Get-Date) -gt $deadline) {{
     Set-Content -LiteralPath $log -Value 'FAIL: timed out waiting for the program to exit' -Encoding UTF8
@@ -524,9 +528,14 @@ try {{
     except OSError:
         pass
     try:
+        # 脱离父进程控制台：双击运行的程序自带控制台窗口，用户点 × 关窗时
+        # Windows 会向同控制台所有进程广播 CTRL_CLOSE_EVENT，不脱离的话
+        # 延迟替换脚本会被一起杀掉，永远跑不完。
+        # getattr 兜底：DETACHED_PROCESS 仅 Windows 存在，测试 mock 平台时安全。
         subprocess.Popen(
             ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-             '-WindowStyle', 'Hidden', '-File', str(script)])
+             '-File', str(script)],
+            creationflags=getattr(subprocess, 'DETACHED_PROCESS', 0))
         return True
     except OSError:
         return False

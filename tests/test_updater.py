@@ -299,7 +299,7 @@ class ReplaceLater(unittest.TestCase):
         later.assert_called_once()
 
     def test_later_replace_writes_script_and_launches(self):
-        """延迟脚本包含目标与新目录路径，用隐藏窗口的 PowerShell 启动"""
+        """延迟脚本包含目标与新目录路径，用脱离控制台的 PowerShell 启动"""
         tmp = Path(tempfile.mkdtemp())
         new_dir = tmp / 'x' / 'Kuraya'
         target = Path('/opt/Kuraya')
@@ -313,9 +313,35 @@ class ReplaceLater(unittest.TestCase):
         self.assertIn('Rename-Item', content)
         args = popen.call_args[0][0]
         self.assertEqual(args[0], 'powershell')
-        self.assertIn('-WindowStyle', args)
         self.assertEqual(args[args.index('-File') + 1], str(script))
+        # 判别性：脱离父进程控制台（用户点 × 关窗时 CTRL_CLOSE_EVENT
+        # 不会带走脚本；旧版无 creationflags 且带 -WindowStyle Hidden）
+        kwargs = popen.call_args[1]
+        self.assertIn('creationflags', kwargs)
+        self.assertNotIn('-WindowStyle', args)
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+
+    def test_update_falls_back_on_winerror32(self):
+        """WinError 32（共享冲突，如资源管理器占用目录）同样走延迟替换"""
+        new_dir = Path(tempfile.mkdtemp())
+        (new_dir / 'Kuraya').mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, new_dir, ignore_errors=True)
+        exe = '/opt/Kuraya/Kuraya.exe'
+        with mock.patch.object(updater, 'FROZEN', True), \
+                mock.patch.object(updater.sys, 'platform', 'win32'), \
+                mock.patch.object(updater.sys, 'executable', exe), \
+                mock.patch.object(updater, 'latest', return_value='9.9.9'), \
+                mock.patch('builtins.input', return_value='y'), \
+                mock.patch.object(updater, '_download',
+                                  return_value=(new_dir, new_dir.parent)), \
+                mock.patch.object(updater, '_replace',
+                                  side_effect=updater.UpdateError(
+                                      'sharing', winerror=32)), \
+                mock.patch.object(updater, '_replace_later',
+                                  return_value=True) as later:
+            code = updater.update(yes=True)
+        self.assertEqual(code, 0)
+        later.assert_called_once()
 
     def test_later_replace_waits_exit_then_retries_rename(self):
         """脚本两阶段：先等进程退出（Get-Process），再重试重命名（while）。

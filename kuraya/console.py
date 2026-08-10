@@ -51,6 +51,23 @@ def ensure_utf8():
             pass
 
 
+def interactive():
+    """
+    屏幕前有人吗：键盘读得到、输出没被重定向。
+
+    定时任务、管道、agent 调用都读不到按键，此时凡是等人输入的分支
+    都必须跳过——读到 EOF 就静默返回，看起来像做完了，其实一件事没做。
+    """
+    for stream in (sys.stdin, sys.stdout):
+        try:
+            if not stream.isatty():
+                return False
+        except (AttributeError, ValueError):
+            # 打包成窗口程序时 stdin 可能是 None，或流已关闭
+            return False
+    return True
+
+
 # ---------- 排版 ----------
 def dw(text):
     """中日文字符占两列，按实际显示宽度计算"""

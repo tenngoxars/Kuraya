@@ -66,7 +66,8 @@ def probing_text(stage, fallback):
 def fail_text(reason):
     """失败原因文案按当前语言即时翻译"""
     return {FailReason.NO_NUMBER: (tr("番号"), tr("未能识别番号")),
-            FailReason.NOT_FOUND: (tr("查询"), tr("未找到元数据")),
+            FailReason.NOT_FOUND: (tr("查询"),
+                                   tr("可能尚未到发行日期，javbus 尚未收录，过几天再试试吧")),
             FailReason.NETWORK: (tr("网络"), tr("连不上数据源")),
             FailReason.COVER_FAILED: (tr("封面"), tr("未能取得封面")),
             FailReason.ARCHIVE_FAILED: (tr("入库"), tr("未能入库")),
@@ -284,9 +285,10 @@ def open_library(library):
 
 
 def offer_open_library(library, opts=None):
-    """刮削完成后选择是否直接打开片库；quiet / 计划任务模式跳过。
+    """刮削完成后选择是否直接打开片库；quiet / 计划任务 / 无人值守时跳过。
     返回是否出现过选择器——调用方用它决定是否还需要「按回车继续」"""
-    if console.QUIET or (opts or {}).get('yes'):
+    if (console.QUIET or (opts or {}).get('yes')
+            or not console.interactive()):
         return False
     from .keys import read_key
     choices = [(tr('打开片库'), tr('在浏览器中查看')),

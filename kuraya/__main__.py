@@ -2,7 +2,7 @@
 """
 Kuraya 命令行入口。
 
-不带参数时走交互流程（双击运行即此行为）；带参数时提供细分命令，
+不带参数时，交互终端走菜单，非交互环境直接执行完整流程；带参数时提供细分命令，
 可被脚本或计划任务调用。
 """
 import argparse
@@ -59,19 +59,39 @@ def resolve_paths(library_opt=None, source_opt=None):
     return library, source
 
 
+def do_delete(path):
+    """校验影片目录、移入废纸篓，并重建片库页面。"""
+    from . import gallery, trash
+
+    cfg = settings.load()
+    library = cfg.get('library', '')
+    target = trash.movie_dir(path, library)
+    if target is not None:
+        if not trash.move_to_trash(target):
+            return PARTIAL
+    elif trash.movie_path(path, library) is None:
+        # 形态不合法（片库外、非两级布局）：拒绝
+        return PARTIAL
+    # 目录已不在片库（上次删除成功但重建失败）视为删除已完成，
+    # 照常重建页面，前端轮询发现数据不再包含该路径即收尾
+    return gallery.main([str(Path(library).expanduser().resolve())])
+
+
 def do_play(raw_path):
-    """由 kuraya: 协议调用，唤起播放器后立即退出"""
-    path = protocol.parse_url(raw_path)
+    """由 kuraya: 协议调用，唤起播放器或处理删除请求后立即退出"""
+    action, path = protocol.parse_request(raw_path)
+    if action == 'delete':
+        return do_delete(path)
     if not os.path.isfile(path):
-        return 1
+        return PARTIAL
     player = settings.load().get('player') or settings.detect_player()
     try:
         if player and os.path.isfile(player):
             subprocess.Popen([player, path])
             return OK
     except OSError:
-        return 1
-    return OK if protocol.open_default(path) else 1
+        return PARTIAL
+    return OK if protocol.open_default(path) else PARTIAL
 
 
 def do_register(quiet=False):
@@ -313,8 +333,10 @@ def main():
     if argv and argv[0] == '--play':
         return do_play(argv[1] if len(argv) > 1 else '')
 
-    # 不带任何参数：进入交互式菜单
-    if not argv:
+    # 不带任何参数：屏幕前有人就进菜单，没人则按完整流程直接执行。
+    # 菜单靠按键驱动，管道/定时任务里读到 EOF 立刻退出，
+    # 于是一部片子没动却返回 0——比报错更糟，调用方无从察觉
+    if not argv and console.interactive():
         from . import menu
         protocol.ensure_registered()
         return menu.run()

@@ -6,7 +6,7 @@
 import os
 import sys
 
-from . import picker, settings
+from . import console, picker, settings
 from .console import C, brand, box, info, say, spin
 from .i18n import tr
 from .launcher import ConfigError
@@ -167,6 +167,12 @@ def load_paths():
     """读取配置；未配置则走首次运行引导。返回 (影片库, 待整理) 或 None"""
     cfg = settings.load()
     if not cfg['configured']:
+        # 引导要弹原生选择框并等人点（超时 300 秒），没人时只能干等，
+        # 直接报错并给出等效命令，让调用方一眼看到该做什么
+        if not console.interactive():
+            raise ConfigError(
+                tr('尚未设置影片库，当前不是交互终端，无法引导设置。\n'
+                   '  请先运行：kuraya config --set-library <影片库目录>'))
         return first_run_setup()
     try:
         return settings.ensure_dirs(cfg['library'], cfg['source'])
@@ -177,6 +183,10 @@ def load_paths():
 
 
 def wait_exit():
+    """停住让人看结果。没人看就别停——管道里 input() 立刻 EOF，
+    留下一行没人读的提示"""
+    if not console.interactive():
+        return
     try:
         input(f'\n  {C.FAINT}{tr("按回车键关闭窗口")}{C.RESET}')
     except (EOFError, KeyboardInterrupt):

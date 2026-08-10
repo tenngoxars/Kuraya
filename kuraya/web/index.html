@@ -11,6 +11,7 @@
 </head>
 <body>
 
+<main id="pageContent">
 <div class="masthead">
   <div class="brand">
     <span class="brand-mark" aria-hidden="true">
@@ -36,7 +37,7 @@
     <div class="search-wrap">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
       <input id="search" type="text" data-i18n-placeholder="search.placeholder"
-             placeholder="搜索演员 · 番号 · 厂商 · 导演">
+             placeholder="搜索演员 · 番号 · 发行商 · 导演">
       <button class="clear-btn" id="clearBtn" type="button" data-i18n-aria="clear" aria-label="清空">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
@@ -65,6 +66,45 @@
 
 <div class="grid" id="grid"></div>
 <div id="sentinel"></div>
+</main>
+
+<div class="confirm-modal" id="confirmModal" hidden>
+  <div class="confirm-backdrop"></div>
+  <section class="confirm-dialog" role="dialog" aria-modal="true"
+           aria-labelledby="confirmTitle"
+           aria-describedby="confirmDescription confirmNote confirmTarget">
+    <div class="confirm-head">
+      <div class="confirm-symbol" aria-hidden="true">
+        <svg width="15" height="16" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>
+        </svg>
+      </div>
+      <h2 id="confirmTitle" data-i18n="delete.title">移入废纸篓</h2>
+      <button class="confirm-close" id="confirmClose" type="button"
+              data-i18n-aria="delete.close" aria-label="关闭">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+    </div>
+    <p class="confirm-copy" id="confirmDescription"></p>
+    <p class="confirm-note" id="confirmNote"></p>
+    <div class="confirm-target" id="confirmTarget"></div>
+    <div class="confirm-actions">
+      <button class="confirm-cancel" id="confirmCancel" type="button"
+              data-i18n="delete.cancel">取消</button>
+      <button class="confirm-submit" id="confirmSubmit" type="button">
+        <svg width="13" height="14" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>
+        </svg>
+        <span data-i18n="delete.action">移入废纸篓</span>
+      </button>
+    </div>
+  </section>
+</div>
 
 <script>
 {{SCRIPT}}

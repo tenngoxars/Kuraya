@@ -121,11 +121,13 @@ def text():
 
 
 def show():
-    """主流程命令开头输出一次更新提示；quiet 或已提示过则跳过"""
+    """交互主流程开头输出一次更新提示；非交互、quiet 或已提示过则跳过"""
     global _shown
     if _shown:
         return
-    if console.QUIET:
+    # 非交互时一并跳过：这行提示没人看，而 text() 要联网查版本，
+    # 平白给定时任务和脚本调用添一次网络等待
+    if console.QUIET or not console.interactive():
         return
     notice = text()
     if notice:

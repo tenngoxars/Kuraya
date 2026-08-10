@@ -8,6 +8,7 @@
 import json
 import os
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 
 # 多语言：裸脚本运行时包不在搜索路径，tr 回退原文、判定表用同值
@@ -84,7 +85,7 @@ def collect(base):
                 return el.text.strip() if el is not None and el.text else default
 
             num = gt("num", code)
-            studio = gt("studio")
+            label = gt("label")
             director = gt("director")
             premiered = gt("premiered") or gt("year")
             runtime = gt("runtime")
@@ -110,7 +111,7 @@ def collect(base):
             items.append({
                 "actress_folder": actress,
                 "code": num,
-                "studio": studio,
+                "label": label,
                 "director": director,
                 "date": premiered,
                 "runtime": runtime,
@@ -137,7 +138,7 @@ def collect(base):
     return deduped
 
 
-PACK_FIELDS = ["folder", "code", "dir", "studio", "director", "date",
+PACK_FIELDS = ["folder", "code", "dir", "label", "director", "date",
                "runtime", "actors", "poster", "video", "added"]
 
 
@@ -157,7 +158,7 @@ def pack(items):
             "folder": folder,
             "code": it["code"],
             "dir": "" if it["_dir"] == it["code"] else it["_dir"],
-            "studio": it["studio"],
+            "label": it["label"],
             "director": it["director"],
             "date": it["date"],
             "runtime": it["runtime"],
@@ -172,7 +173,7 @@ def pack(items):
 
 def script_json(obj):
     """
-    注入 <script> 的 JSON 必须把 < 转义掉。番号/厂商/演员来自第三方数据源，
+    注入 <script> 的 JSON 必须把 < 转义掉。番号/发行商/演员来自第三方数据源，
     其中一个含 </script> 就会提前闭合脚本块——前端脚本被截断，整页只剩空白，
     而且不报任何错。只转 < 就够：脚本块靠 </ 与 <!-- 才能被打断，
     单独的 > 和 & 在脚本内容里没有语法意义。
@@ -185,9 +186,12 @@ def render(base, items):
     """界面模板与数据分离：模板随包走，数据在此注入，输出为单文件页面"""
     html = read_web("index.html")
     html = html.replace("{{STYLE}}", read_web("style.css").rstrip("\n"))
-    # 注入顺序：i18n.js（t/UI_LANG 定义）→ app.js（数据解包+渲染）→
-    # filters.js（筛选交互，依赖前两者的顶层定义；同块函数声明提升）
-    script = "\n".join(read_web(n) for n in ("i18n.js", "app.js", "filters.js"))
+    # 注入顺序：i18n.js（t/UI_LANG 定义）→ state.js（无 DOM 状态函数）→
+    # delete.js（删除弹窗与恢复流程）→ app.js（数据解包+渲染）→
+    # filters.js（筛选交互，依赖前两者）
+    script = "\n".join(read_web(n) for n in
+                         ("i18n.js", "state.js", "delete.js", "app.js",
+                          "filters.js"))
     script = script.replace("{{TRADITIONAL_CODES}}",
                             json.dumps(TRADITIONAL_CODES))
     script = script.replace("{{PACK_FIELDS}}", script_json(PACK_FIELDS))
@@ -199,6 +203,24 @@ def render(base, items):
     html = html.replace("{{COUNT}}", str(len(items)))
     html = html.replace("{{PLAY_MODE}}", play_mode)
     return html.replace("{{DATA_JSON}}", script_json(pack(items)))
+
+
+def write_page_atomic(path, html):
+    """完整写入临时文件后替换页面，避免浏览器读到半份 HTML。"""
+    path = os.fspath(path)
+    fd, temp = tempfile.mkstemp(
+        prefix=f'.{os.path.basename(path)}.', suffix='.tmp',
+        dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            stream.write(html)
+        os.replace(temp, path)
+    except BaseException:
+        try:
+            os.unlink(temp)
+        except OSError:
+            pass
+        raise
 
 
 def main(argv=None):
@@ -218,8 +240,7 @@ def main(argv=None):
 
     html = render(base, items)
     out_path = os.path.join(base, "index.html")
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(html)
+    write_page_atomic(out_path, html)
     print(tr('已生成 {path}，大小 {size} 字节',
              path=out_path, size=os.path.getsize(out_path)))
     return 0

@@ -102,7 +102,25 @@ class Failures(unittest.TestCase):
 
     def test_not_found_wording(self):
         line, _ = self.one(FailReason.NOT_FOUND)
-        self.assertIn('未找到元数据', line)
+        self.assertIn('可能尚未到发行日期，javbus 尚未收录，过几天再试', line)
+        self.assertEqual(
+            launcher.fail_text(FailReason.NOT_FOUND)[1],
+            '可能尚未到发行日期，javbus 尚未收录，过几天再试试吧',
+        )
+
+    def test_not_found_hint_is_translated(self):
+        expected = {
+            _i18n.ZH_CN: '可能尚未到发行日期，javbus 尚未收录，过几天再试试吧',
+            _i18n.ZH_TW: '可能尚未到發行日期，javbus 尚未收錄，過幾天再試試吧',
+            _i18n.EN: 'Possibly unreleased or unlisted; try again later',
+        }
+        for language, wording in expected.items():
+            with self.subTest(language=language):
+                with mock.patch.object(_i18n, '_lang', language):
+                    line, _ = self.one(FailReason.NOT_FOUND)
+                    self.assertEqual(launcher.fail_text(FailReason.NOT_FOUND)[1],
+                                     wording)
+                self.assertIn(wording[:18], line)
 
     def test_network_is_distinct_from_not_found(self):
         network, _ = self.one(FailReason.NETWORK)
@@ -245,6 +263,13 @@ class ChildProtocol(unittest.TestCase):
 class OfferOpenLibrary(unittest.TestCase):
     """完整流程完成后用方向键选择是否直接打开片库"""
 
+    def setUp(self):
+        # 测试进程自身不是交互终端，选择器会整个跳过。基线上假定屏幕前
+        # 有人，各用例才测得到自己那个条件而不是一律跳过
+        tty = mock.patch('kuraya.console.interactive', return_value=True)
+        tty.start()
+        self.addCleanup(tty.stop)
+
     def run_all(self, keys=('enter',), quiet=False, yes=False):
         read = mock.Mock(side_effect=list(keys))
         opened = mock.Mock()
@@ -314,6 +339,15 @@ class OfferOpenLibrary(unittest.TestCase):
 
     def test_yes_skips_prompt(self):
         read, opened, offered = self.run_all(yes=True)
+        read.assert_not_called()
+        opened.assert_not_called()
+        self.assertFalse(offered)
+
+    def test_without_tty_skips_prompt(self):
+        """管道与定时任务里跳过：选择器靠按键驱动，没人按就只是
+        在流程末尾白画两行，而调用方还会误以为交互过"""
+        with mock.patch('kuraya.console.interactive', return_value=False):
+            read, opened, offered = self.run_all()
         read.assert_not_called()
         opened.assert_not_called()
         self.assertFalse(offered)

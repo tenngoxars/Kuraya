@@ -14,6 +14,40 @@ _i18n._lang = _i18n.ZH_CN  # 测试断言简体中文文案（含 pick 标题）
 from kuraya import setup
 
 
+class NonInteractive(unittest.TestCase):
+    """
+    没人在屏幕前时，两处等待都必须让路：引导要弹原生选择框等人点
+    （picker 超时 300 秒），退出前的「按回车关闭」则纯属多余。
+    """
+
+    def test_load_paths_refuses_to_prompt(self):
+        from kuraya.launcher import ConfigError
+        with mock.patch('kuraya.console.interactive', return_value=False), \
+                mock.patch('kuraya.settings.load',
+                           return_value={'configured': False}), \
+                mock.patch.object(setup, 'first_run_setup') as guide:
+            with self.assertRaises(ConfigError) as caught:
+                setup.load_paths()
+        guide.assert_not_called()
+        # 报错要带上等效命令，调用方才知道下一步做什么
+        self.assertIn('--set-library', str(caught.exception))
+
+    def test_load_paths_still_guides_with_tty(self):
+        with mock.patch('kuraya.console.interactive', return_value=True), \
+                mock.patch('kuraya.settings.load',
+                           return_value={'configured': False}), \
+                mock.patch.object(setup, 'first_run_setup',
+                                  return_value=('/lib', '/src')) as guide:
+            self.assertEqual(setup.load_paths(), ('/lib', '/src'))
+        guide.assert_called_once()
+
+    def test_wait_exit_does_not_block(self):
+        with mock.patch('kuraya.console.interactive', return_value=False), \
+                mock.patch('builtins.input') as prompt:
+            setup.wait_exit()
+        prompt.assert_not_called()
+
+
 class OfferPathInstall(unittest.TestCase):
     """Windows 打包版首次运行的 PATH 征询（曾因 key 未定义而崩溃）"""
 

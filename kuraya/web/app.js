@@ -9,7 +9,7 @@ const DATA = {{DATA_JSON}}.map(row => {
   return {
     actress_folder: r.folder,
     code: r.code,
-    studio: r.studio,
+    label: r.label,
     director: r.director,
     date: r.date,
     runtime: r.runtime,
@@ -17,6 +17,7 @@ const DATA = {{DATA_JSON}}.map(row => {
     poster_url: r.poster
       ? [r.folder, dir, r.poster].map(encodeURIComponent).join("/") : "",
     video_path: [LIB_BASE, r.folder, dir, r.video].join(PATH_SEP),
+    delete_path: [LIB_BASE, r.folder, dir].join(PATH_SEP),
     added_ts: r.added,
   };
 });
@@ -24,12 +25,14 @@ const DATA = {{DATA_JSON}}.map(row => {
 // "protocol" 时点封面直接唤起播放器；"copy" 时只能复制路径，
 // 因为注册自定义协议要写注册表，非 Windows 平台没有这条路
 const PLAY_MODE = "{{PLAY_MODE}}";
+const IS_PROTOCOL = PLAY_MODE === "protocol";
 
 // i18n.js 在本文件之前注入：t()/UI_LANG 已就绪（gallery.render 拼接顺序保证）
 
 const grid = document.getElementById("grid");
 const search = document.getElementById("search");
 const clearBtn = document.getElementById("clearBtn");
+const totalEl = document.querySelector(".stat-num");
 const countEl = document.getElementById("count");
 const chipsEl = document.getElementById("chips");
 const pillsEl = document.getElementById("pills");
@@ -75,7 +78,7 @@ function isNew(it) {
 // 直接不出现，避免「导演 0」这种点开也是空的按钮
 const ALL_DIMS = [
   { key: "actor", label: t("dim.actor"), of: it => actorList(it) },
-  { key: "studio", label: t("dim.studio"), of: it => it.studio ? [it.studio] : [] },
+  { key: "label", label: t("dim.label"), of: it => it.label ? [it.label] : [] },
   { key: "director", label: t("dim.director"), of: it => it.director ? [it.director] : [] },
 ];
 
@@ -90,12 +93,13 @@ for (const dim of ALL_DIMS) {
 const DIMS = ALL_DIMS.filter(d => d.values.length > 0);
 
 let activeDim = "actor";
-const active = { actor: null, studio: null, director: null };
+const active = { actor: null, label: null, director: null };
+let browseSnapshot = null;  // 进入筛选前的位置及已渲染数量，清空后恢复
 
 const SEPARATORS = /[\s\-_.·・]/g;
 const squash = s => s.replace(SEPARATORS, "");
 DATA.forEach(it => {
-  it._fields = [it.code, it.actors, it.studio || "", it.director || "",
+  it._fields = [it.code, it.actors, it.label || "", it.director || "",
                 it.actress_folder].map(f => f.toLowerCase());
   it._squashed = it._fields.map(squash);
 });
@@ -131,6 +135,10 @@ function visibleList() {
 // 注意不能写成 kuraya://，浏览器会把后面的内容当主机名解析而破坏路径。
 function playUrl(it) {
   return "kuraya:" + encodeURIComponent(it.video_path);
+}
+
+function deleteUrl(it) {
+  return "kuraya:delete:" + encodeURIComponent(it.delete_path);
 }
 
 // 复制模式下的兜底：把路径放进剪贴板，用户粘到播放器或终端里去。
@@ -169,49 +177,51 @@ function copyPath(it, card) {
 }
 
 function cardEl(it, i) {
-  const card = document.createElement("a");
+  const card = document.createElement("article");
   card.className = "card";
-  if (PLAY_MODE === "protocol") {
-    card.href = playUrl(it);
-  } else {
-    card.href = "#";
-    card.title = it.video_path;
-    card.addEventListener("click", ev => {
-      ev.preventDefault();
-      copyPath(it, card);
-    });
-  }
   // 逐个错开出现，最多延迟到 24 个，避免长列表末尾等待过久
   card.style.animationDelay = Math.min(i, 24) * 22 + "ms";
   const cover = it.poster_url
     ? `<img src="${esc(it.poster_url)}" loading="lazy" alt="">`
     : `<div class="no-cover">NO COVER</div>`;
   const badge = isNew(it) ? `<div class="badge-new">NEW</div>` : "";
-  const link = (dim, v) =>
+  const metaLink = (dim, v) =>
     `<span class="meta-link" data-dim="${dim}" data-val="${esc(v)}">${esc(v)}</span>`;
-  const actorsHtml = actorList(it).map(n => link("actor", n))
+  const actorsHtml = actorList(it).map(n => metaLink("actor", n))
     .join('<span class="actor-sep">、</span>');
   const subParts = [];
-  if (it.studio) {
-    subParts.push(`<span class="studio meta-link" data-dim="studio"`
-      + ` data-val="${esc(it.studio)}">${esc(it.studio)}</span>`);
+  if (it.label) {
+    subParts.push(`<span class="publisher meta-link" data-dim="label"`
+      + ` data-val="${esc(it.label)}">${esc(it.label)}</span>`);
   }
-  if (it.director) subParts.push(link("director", it.director));
+  if (it.director) subParts.push(metaLink("director", it.director));
   if (it.date) subParts.push(`<span class="date">${esc(it.date)}</span>`);
 
-  card.innerHTML = `
+  const link = document.createElement("a");
+  link.className = "card-link";
+  if (IS_PROTOCOL) {
+    link.href = playUrl(it);
+  } else {
+    link.href = "#";
+    link.title = it.video_path;
+    link.addEventListener("click", ev => {
+      ev.preventDefault();
+      copyPath(it, card);
+    });
+  }
+  link.innerHTML = `
     <div class="cover-wrap">
       ${cover}
       ${badge}
       <div class="play"><span>
-        ${PLAY_MODE === "protocol"
+        ${IS_PROTOCOL
           ? `<svg width="13" height="15" viewBox="0 0 13 15" fill="#fff"><path d="M0 0l13 7.5L0 15z"/></svg>`
           : `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.4">
                <rect x="5.5" y="5.5" width="9" height="9" rx="1.6"/>
                <path d="M10.5 5.5v-3a1 1 0 0 0-1-1h-7a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h3"/>
              </svg>`}
       </span></div>
-      ${PLAY_MODE === "protocol" ? "" : `<div class="card-hint"></div>`}
+      ${IS_PROTOCOL ? "" : `<div class="card-hint"></div>`}
     </div>
     <div class="meta">
       <div class="code">${esc(it.code)}</div>
@@ -219,7 +229,27 @@ function cardEl(it, i) {
       <div class="sub">${subParts.join('<span class="dot"></span>')}</div>
     </div>
   `;
-  card.querySelectorAll(".meta-link").forEach(el => {
+  card.appendChild(link);
+
+  if (deleteEnabled(PLAY_MODE)) {
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "delete-btn";
+    del.title = t("delete.title");
+    del.setAttribute("aria-label", t("delete.title"));
+    del.innerHTML = `<svg width="14" height="15" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>
+    </svg>`;
+    del.addEventListener("click", ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      requestDelete(it);
+    });
+    card.appendChild(del);
+  }
+
+  link.querySelectorAll(".meta-link").forEach(el => {
     el.addEventListener("click", e => {
       e.preventDefault();
       e.stopPropagation();
@@ -248,10 +278,18 @@ function loadMore() {
 
 function render() {
   result = visibleList();
-  rendered = FULL_RENDER ? Infinity : PAGE;
+  // force：删除恢复路径设置（筛选状态下也恢复位置与批次数）
+  const restore = browseSnapshot && (!dirty() || browseSnapshot.force);
+  rendered = browseRenderCount(restore, result.length, PAGE, FULL_RENDER);
   countEl.textContent = dirty() ? `${result.length} / ${DATA.length}` : "";
   grid.innerHTML = "";
 
+  // 清空筛选后按快照回到原浏览位置；空结果也恢复，避免停在页面顶部
+  if (restore) {
+    const top = restore.scrollY;
+    browseSnapshot = null;
+    requestAnimationFrame(() => window.scrollTo({top, behavior: "auto"}));
+  }
   if (!result.length) {
     grid.innerHTML = `<div class="empty">${t("empty")}</div>`;
     return;
@@ -278,6 +316,7 @@ function updateClearBtn() {
 
 // ---------- 排序下拉 ----------
 function setSort(key) {
+  rememberBrowsePosition();
   sortKey = key;
   sortLabel.textContent = SORT_NAMES[key];
   sortOpts.forEach(opt =>
@@ -338,6 +377,7 @@ document.addEventListener("keydown", e => {
 });
 
 search.addEventListener("input", () => {
+  if (search.value.trim()) rememberBrowsePosition(true);
   updateClearBtn();
   buildPills();
   render();
@@ -357,6 +397,7 @@ document.addEventListener("keydown", (e) => {
 buildChips();
 buildPills();
 render();
+startDeleteRecovery();
 
 // 窗口/容器宽度变化时重测筛选行。旧浏览器（与无 IntersectionObserver 的
 // FULL_RENDER 回退同一批老环境）通常也没有 ResizeObserver——首屏测量已

@@ -129,6 +129,7 @@ python -m kuraya
 
 ```
 python -m unittest discover tests
+node --test tests/test_web_state.js
 ```
 
 自行打包：

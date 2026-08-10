@@ -13,6 +13,7 @@ import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 from xml.sax.saxutils import escape as xml_escape
 
 from kuraya import gallery
@@ -22,6 +23,7 @@ NFO = """<?xml version="1.0" encoding="UTF-8" ?>
   <title>TEST-001-测试作品</title>
   <num>TEST-001</num>
   <studio>STUDIO-X</studio>
+  <label>LABEL-X</label>
   <premiered>2025-01-01</premiered>
   <runtime>120</runtime>
   <poster>TEST-001-poster.jpg</poster>
@@ -30,15 +32,15 @@ NFO = """<?xml version="1.0" encoding="UTF-8" ?>
 """
 
 
-def build_page(age_days=0, studio='STUDIO-X'):
+def build_page(age_days=0, label='LABEL-X'):
     """在临时目录造最小影片库并生成页面，返回 index.html 文本。
     age_days 回拨视频文件 mtime——「新入库」按 mtime 判定；
-    studio 用于注入含特殊字符的元数据（nfo 是 XML，写入前按 XML 转义）"""
+    label 用于注入含特殊字符的发行商元数据（nfo 是 XML，写入前按 XML 转义）"""
     with tempfile.TemporaryDirectory() as tmp:
         cdir = Path(tmp) / '测试演员' / 'TEST-001'
         cdir.mkdir(parents=True)
         (cdir / 'TEST-001.nfo').write_text(
-            NFO.replace('STUDIO-X', xml_escape(studio)), encoding='utf-8')
+            NFO.replace('LABEL-X', xml_escape(label)), encoding='utf-8')
         (cdir / 'TEST-001-poster.jpg').write_bytes(b'')
         video = cdir / 'TEST-001.mp4'
         video.write_bytes(b'')
@@ -69,6 +71,62 @@ class GalleryContract(unittest.TestCase):
         self.assertIn('const SEPARATORS', html)
         self.assertIn('it._squashed = it._fields.map(squash)', html)
 
+    def test_page_uses_distributor_not_studio(self):
+        """片库页面显示发行商，制作商仍只留在 NFO 中"""
+        html = build_page()
+        self.assertIn('LABEL-X', html)
+        self.assertNotIn('STUDIO-X', html)
+
+    def test_page_contains_recoverable_delete_action(self):
+        """页面通过 kuraya 协议请求移入废纸篓，不直接执行任意文件操作"""
+        html = build_page()
+        for fragment in (
+                'delete_path:', 'kuraya:delete:', 'requestDelete',
+                'className = "delete-btn"', 'id="confirmModal"',
+                'role="dialog"', 'confirmDelete', '.card:hover .delete-btn',
+                '.delete-btn:focus-visible', '@media (hover: none)',
+                'function deletePollState', 'scheduleDeleteReload',
+                'role", "status"', 'aria-live', 'confirmTarget',
+                'location.replace(url.href)', 'deleteStatus("error"',
+                'restoreDeleteItems', 'DATA.splice(0, DATA.length',
+                'item: it', 'scrollY: window.scrollY',
+                'lastDeleteSnapshot', 'latestFilters',
+                'restoreDeleteView', 'applyDeleteFilters'):
+                with self.subTest(fragment=fragment):
+                    self.assertIn(fragment, html)
+        self.assertNotIn('.card:focus-within .delete-btn', html)
+        self.assertNotIn('window.confirm(', html)
+        self.assertNotIn('window.location.reload()', html)
+
+    def test_page_scripts_keep_dependency_order(self):
+        """单文件脚本的顶层依赖顺序不能因拆分而踩 TDZ。"""
+        html = build_page()
+        for earlier, later in (
+                ('const UI_LANG', 'function deletePollState'),
+                ('function deletePollState', 'const confirmModal'),
+                ('const confirmModal', 'const DATA'),
+                ('const DATA', 'function buildChips')):
+            with self.subTest(earlier=earlier, later=later):
+                self.assertLess(html.index(earlier), html.index(later))
+
+    def test_copy_mode_keeps_delete_action_disabled(self):
+        """协议不可用时，生成页面必须明确处于 copy 模式并走删除能力守卫"""
+        with mock.patch.object(gallery, 'play_mode', 'copy'):
+            html = build_page()
+        self.assertIn('const PLAY_MODE = "copy"', html)
+        self.assertIn('deleteEnabled(PLAY_MODE)', html)
+
+    def test_atomic_page_write_preserves_old_page_on_replace_failure(self):
+        """新页面替换失败时，旧页面不能被截断或覆盖"""
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / 'index.html'
+            output.write_text('old page', encoding='utf-8')
+            with mock.patch.object(gallery.os, 'replace', side_effect=OSError('busy')):
+                with self.assertRaises(OSError):
+                    gallery.write_page_atomic(output, 'new page')
+            self.assertEqual(output.read_text(encoding='utf-8'), 'old page')
+            self.assertEqual(list(Path(tmp).glob('.index.html.*.tmp')), [])
+
 
 class ScriptInjection(unittest.TestCase):
     """元数据来自第三方数据源，原样进 <script> 会截断脚本块"""
@@ -76,15 +134,15 @@ class ScriptInjection(unittest.TestCase):
     EVIL = '</script><h1 id="broke">X</h1><script>'
 
     def test_closing_tag_in_metadata_does_not_break_out(self):
-        """厂商名含 </script> 时页面里不能出现第二个 </script>——
+        """发行商名含 </script> 时页面里不能出现第二个 </script>——
         出现即脚本块被提前闭合，app.js 截断，整页零张卡片且不报错"""
-        html = build_page(studio=self.EVIL)
+        html = build_page(label=self.EVIL)
         self.assertEqual(html.count('</script>'), 1)
 
     def test_escaped_value_is_still_present(self):
         """转义只改字节表示不丢值：\\u003c 在 JS 字符串里还原成 <。
         断言取转义后的实际形态，直接断言 </script> 会被模板自带的那个命中"""
-        html = build_page(studio=self.EVIL)
+        html = build_page(label=self.EVIL)
         self.assertIn(r'\u003c/script>', html)
 
     def test_card_escapes_every_interpolated_field(self):
@@ -93,7 +151,7 @@ class ScriptInjection(unittest.TestCase):
         html = build_page()
         self.assertIn('function esc(s)', html)
         for point in ('${esc(it.poster_url)}', '${esc(it.code)}',
-                      '${esc(it.studio)}', 'data-val="${esc(v)}"'):
+                      '${esc(it.label)}', 'data-val="${esc(v)}"'):
             with self.subTest(point=point):
                 self.assertIn(point, html)
 
@@ -128,7 +186,7 @@ class TopBar(unittest.TestCase):
 
     def test_three_dimensions_present(self):
         html = build_page()
-        for key in ('"actor"', '"studio"', '"director"'):
+        for key in ('"actor"', '"label"', '"director"'):
             with self.subTest(key=key):
                 self.assertIn(f'key: {key}', html)
 
@@ -148,6 +206,7 @@ class TopBar(unittest.TestCase):
     def test_director_collected(self):
         """导演要能筛，打包字段里就得有它——顺序还必须与页面还原时一致"""
         html = build_page()
+        self.assertIn('"label"', html)
         self.assertIn('"director"', html)
         self.assertEqual(gallery.PACK_FIELDS.index('director'), 4)
 
@@ -188,6 +247,25 @@ class TopBar(unittest.TestCase):
         html = build_page()
         self.assertIn('"ResizeObserver" in window', html)
 
+    def test_clear_restores_browse_position(self):
+        """筛选前的滚动位置要保存，清空后恢复，不能每次都回到顶部"""
+        html = build_page()
+        for fragment in (
+                'let browseSnapshot = null',
+                'function rememberBrowsePosition',
+                'browseSnapshot = {scrollY: window.scrollY, rendered}',
+                'browseSnapshot && (!dirty() || browseSnapshot.force)',
+                'browseRenderCount(restore, result.length, PAGE, FULL_RENDER)',
+                'window.scrollTo({top, behavior: "auto"})'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, html)
+
+        set_filter = html[html.index('function setFilter'):html.index('function resetAll')]
+        reset_all = html[html.index('function resetAll'):html.index('</script>')]
+        self.assertIn('rememberBrowsePosition();', set_filter)
+        self.assertIn('scrollAfterFilterChange();', set_filter)
+        self.assertIn('render();', reset_all)
+
     def test_i18n_module_is_injected_before_app(self):
         """判别性：app.js 顶层就调用 t()/UI_LANG，若 i18n.js 拼在它后面
         会在定义前引用直接抛错，整页空白——顺序错了产物里 UI_LANG
@@ -207,7 +285,7 @@ class Packing(unittest.TestCase):
         acts = ''.join(f'<actor><name>{a}</name></actor>' for a in actors)
         (d / f'{dirname}.nfo').write_text(
             f'<?xml version="1.0" encoding="UTF-8" ?><movie><num>{num}</num>'
-            f'<studio>S</studio><premiered>2025-01-01</premiered>'
+            f'<studio>S</studio><label>L</label><premiered>2025-01-01</premiered>'
             f'<poster>{poster}</poster>{acts}</movie>', encoding='utf-8')
         (d / poster).write_bytes(b'')
         (d / f'{dirname}.mp4').write_bytes(b'')

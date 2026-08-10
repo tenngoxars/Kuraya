@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from kuraya import protocol
-from kuraya.protocol import parse_url
+from kuraya.protocol import parse_request, parse_url
 
 
 class ParseUrl(unittest.TestCase):
@@ -42,6 +42,15 @@ class ParseUrl(unittest.TestCase):
 
     def test_plain_scheme_prefix_without_value(self):
         self.assertEqual(parse_url('kuraya:'), '.')
+
+    def test_delete_request_keeps_action_separate_from_path(self):
+        self.assertEqual(
+            parse_request('kuraya:delete:%2Ftmp%2F%E5%BD%B1%E7%89%87'),
+            ('delete', '/tmp/影片'))
+
+    def test_regular_request_remains_play(self):
+        self.assertEqual(parse_request('kuraya:%2Ftmp%2Fmovie.mp4'),
+                         ('play', '/tmp/movie.mp4'))
 
 
 class PlayMode(unittest.TestCase):
@@ -78,9 +87,11 @@ class PlayMode(unittest.TestCase):
     @mock.patch.object(protocol.sys, 'platform', 'linux')
     @mock.patch.object(protocol.os, 'name', 'posix')
     @mock.patch('kuraya.protocol.subprocess.run')
-    def test_linux_registered(self, run):
+    @mock.patch('kuraya.protocol._linux_handler_ready', return_value=True)
+    def test_linux_registered(self, ready, run):
         run.return_value = SimpleNamespace(stdout='kuraya-handler.desktop')
         self.assertEqual(protocol.play_mode(), 'protocol')
+        ready.assert_called_once_with('kuraya-handler.desktop')
 
     @mock.patch.object(protocol.sys, 'platform', 'linux')
     @mock.patch.object(protocol.os, 'name', 'posix')
@@ -88,6 +99,35 @@ class PlayMode(unittest.TestCase):
     def test_linux_not_registered(self, run):
         run.return_value = SimpleNamespace(stdout='')
         self.assertEqual(protocol.play_mode(), 'copy')
+
+    @mock.patch.object(protocol.sys, 'platform', 'linux')
+    @mock.patch.object(protocol.os, 'name', 'posix')
+    @mock.patch.object(protocol.subprocess, 'run')
+    @mock.patch('kuraya.protocol._linux_handler_ready', return_value=False)
+    def test_linux_stale_handler_falls_back_to_copy(self, ready, run):
+        run.return_value = SimpleNamespace(stdout='kuraya-handler.desktop')
+        self.assertEqual(protocol.play_mode(), 'copy')
+        ready.assert_called_once_with('kuraya-handler.desktop')
+
+    def test_linux_handler_checks_desktop_exec(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            desktop = Path(tmp) / 'applications' / 'kuraya-handler.desktop'
+            desktop.parent.mkdir()
+            desktop.write_text(
+                '[Desktop Entry]\nType=Application\nExec=/bin/sh --play %u\n',
+                encoding='utf-8')
+            with mock.patch.dict('os.environ', {'XDG_DATA_HOME': tmp},
+                                 clear=False):
+                self.assertTrue(protocol._linux_handler_ready(
+                    'kuraya-handler.desktop'))
+
+            desktop.write_text(
+                '[Desktop Entry]\nType=Application\nExec=/bin/sh\n',
+                encoding='utf-8')
+            with mock.patch.dict('os.environ', {'XDG_DATA_HOME': tmp},
+                                 clear=False):
+                self.assertFalse(protocol._linux_handler_ready(
+                    'kuraya-handler.desktop'))
 
     @mock.patch.object(protocol.sys, 'platform', 'linux')
     @mock.patch.object(protocol.os, 'name', 'posix')

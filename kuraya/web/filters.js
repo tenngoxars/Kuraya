@@ -1,6 +1,7 @@
 // ---------- 筛选行：维度切换 + 宽度自适应的 chips + 更多面板 ----------
-// 独立文件与 i18n.js、app.js 同块注入（gallery.render 顺序：i18n.js →
-// app.js → filters.js）。依赖 DIMS/active/activeDim/chipsEl/pillsEl 等
+// 独立文件与 i18n.js、state.js、delete.js、app.js 同块注入（gallery.render
+// 顺序：i18n.js → state.js → delete.js → app.js → filters.js）。依赖
+// DIMS/active/activeDim/chipsEl/pillsEl 等
 // app.js 顶层的定义；本文件顶层不要放会立即执行的 const（app.js 末尾
 // 的 buildChips() 调用先于本文件执行到，const 会落在 TDZ 抛错）
 
@@ -131,6 +132,18 @@ function dirty() {
     || sortKey !== DEFAULT_SORT;
 }
 
+function rememberBrowsePosition(force = false) {
+  if (browseSnapshot === null && (force || !dirty())) {
+    browseSnapshot = {scrollY: window.scrollY, rendered};
+  }
+}
+
+function scrollAfterFilterChange() {
+  if (dirty()) {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+}
+
 function buildPills() {
   pillsEl.innerHTML = "";
   for (const dim of DIMS) {
@@ -155,14 +168,16 @@ function buildPills() {
 }
 
 function setFilter(key, value) {
+  rememberBrowsePosition();
   active[key] = (active[key] === value) ? null : value;
   buildChips();
   buildPills();
   render();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  scrollAfterFilterChange();
 }
 
 function resetAll() {
+  if (dirty()) rememberBrowsePosition(true);
   search.value = "";
   DIMS.forEach(d => { active[d.key] = null; });
   sortKey = DEFAULT_SORT;
@@ -173,5 +188,4 @@ function resetAll() {
   buildChips();
   buildPills();
   render();
-  window.scrollTo({ top: 0, behavior: "smooth" });
 }

@@ -3,11 +3,13 @@
 自定义 URL 协议 kuraya: 的注册与调用。
 
 片库页面是静态 HTML，浏览器无法直接启动播放器，需借助自定义协议：
-页面上的链接形如 kuraya:<百分号编码的绝对路径>，由本程序接管并唤起播放器。
+页面上的链接形如 kuraya:<百分号编码的绝对路径>，由本程序接管并唤起播放器；
+删除链接使用 kuraya:delete:<百分号编码的影片目录>。
 
 注册写入 HKEY_CURRENT_USER，不需要管理员权限。
 """
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -122,6 +124,35 @@ def open_default(path):
         return False
 
 
+def _linux_handler_ready(desktop_name):
+    """确认 xdg 返回的处理器仍存在，且 Exec 指向可执行文件。"""
+    name = desktop_name.strip()
+    if not name:
+        return False
+    if Path(name).is_absolute():
+        candidates = [Path(name)]
+    else:
+        data_home = Path(os.environ.get(
+            'XDG_DATA_HOME', str(Path.home() / '.local' / 'share')))
+        data_dirs = [data_home]
+        extra = os.environ.get('XDG_DATA_DIRS', '/usr/local/share:/usr/share')
+        data_dirs.extend(Path(part) for part in extra.split(os.pathsep) if part)
+        candidates = [base / 'applications' / name for base in data_dirs]
+
+    desktop = next((path for path in candidates if path.is_file()), None)
+    if desktop is None:
+        return False
+    try:
+        exec_line = next(line[5:] for line in desktop.read_text(
+            encoding='utf-8').splitlines() if line.startswith('Exec='))
+        command = shlex.split(exec_line)
+    except (OSError, StopIteration, ValueError):
+        return False
+    if not command or not any(arg in ('%u', '%U') for arg in command[1:]):
+        return False
+    return shutil.which(command[0]) is not None
+
+
 def play_mode():
     """当前平台能否用 kuraya: 协议点封面播放，返回 'protocol' 或 'copy'。
     页面据此决定链接形态：协议不可用时降级为复制路径，不留点了没反应的封面。
@@ -138,8 +169,8 @@ def play_mode():
     try:
         out = subprocess.run(
             ['xdg-mime', 'query', 'default', 'x-scheme-handler/kuraya'],
-            capture_output=True, text=True, timeout=5)
-        return 'protocol' if out.stdout.strip() else 'copy'
+            capture_output=True, text=True, timeout=5, check=True)
+        return 'protocol' if _linux_handler_ready(out.stdout) else 'copy'
     except (OSError, subprocess.SubprocessError):
         return 'copy'
 
@@ -155,3 +186,14 @@ def parse_url(raw):
     if not os.path.isabs(text):
         text = text.lstrip('/')
     return os.path.normpath(text)
+
+
+def parse_request(raw):
+    """解析协议请求，返回 ``(动作, 路径)``。"""
+    text = raw.strip().strip('"')
+    prefix = SCHEME + ':'
+    if text.lower().startswith(prefix):
+        text = text[len(prefix):]
+    if text.lower().startswith('delete:'):
+        return 'delete', parse_url(text[len('delete:'):])
+    return 'play', parse_url(raw)

@@ -10,6 +10,7 @@ const {
   advanceDeleteMarkers,
   lastDeleteSnapshot,
   latestFilters,
+  browseRestoreSnapshot,
 } = require("../kuraya/web/state.js");
 
 test("copy mode does not enable destructive actions", () => {
@@ -26,6 +27,14 @@ test("restoring a deep browse position renders the old number of batches first",
     browseRenderCount({rendered: 240}, 100, 60, false),
     100,
   );
+});
+
+test("clearing filters returns the original browse snapshot, not a boolean", () => {
+  const snapshot = {scrollY: 14906, rendered: 120};
+  const forced = {...snapshot, force: true};
+  assert.strictEqual(browseRestoreSnapshot(snapshot, false), snapshot);
+  assert.equal(browseRestoreSnapshot(snapshot, true), null);
+  assert.strictEqual(browseRestoreSnapshot(forced, true), forced);
 });
 
 test("removing a rendered card keeps the next batch contiguous", () => {

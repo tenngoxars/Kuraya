@@ -279,7 +279,7 @@ function loadMore() {
 function render() {
   result = visibleList();
   // force：删除恢复路径设置（筛选状态下也恢复位置与批次数）
-  const restore = browseSnapshot && (!dirty() || browseSnapshot.force);
+  const restore = browseRestoreSnapshot(browseSnapshot, dirty());
   rendered = browseRenderCount(restore, result.length, PAGE, FULL_RENDER);
   countEl.textContent = dirty() ? `${result.length} / ${DATA.length}` : "";
   grid.innerHTML = "";

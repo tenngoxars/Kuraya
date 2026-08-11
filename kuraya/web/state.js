@@ -9,6 +9,11 @@ function browseRenderCount(snapshot, resultLength, page, fullRender) {
   return Math.min(Math.max(saved, page), resultLength);
 }
 
+function browseRestoreSnapshot(snapshot, filtered) {
+  if (!snapshot) return null;
+  return !filtered || snapshot.force ? snapshot : null;
+}
+
 function renderedAfterDelete(rendered, index) {
   return index >= 0 && index < rendered ? rendered - 1 : rendered;
 }
@@ -79,6 +84,6 @@ if (typeof module !== "undefined") {
   module.exports = {
     deleteEnabled, browseRenderCount, renderedAfterDelete, deletePollState,
     restoreDeleteItems, advanceDeleteMarkers, lastDeleteSnapshot,
-    latestFilters,
+    latestFilters, browseRestoreSnapshot,
   };
 }

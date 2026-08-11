@@ -254,7 +254,7 @@ class TopBar(unittest.TestCase):
                 'let browseSnapshot = null',
                 'function rememberBrowsePosition',
                 'browseSnapshot = {scrollY: window.scrollY, rendered}',
-                'browseSnapshot && (!dirty() || browseSnapshot.force)',
+                'browseRestoreSnapshot(browseSnapshot, dirty())',
                 'browseRenderCount(restore, result.length, PAGE, FULL_RENDER)',
                 'window.scrollTo({top, behavior: "auto"})'):
             with self.subTest(fragment=fragment):

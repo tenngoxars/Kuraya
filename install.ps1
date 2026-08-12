@@ -20,6 +20,7 @@ $Msg = @{
     'will-install' = '  将安装到 {0}'
     downloading = '  下载 {0}'
     installing  = '  安装到 {0}'
+    'in-use'    = "  安装目录被占用: {0}`n  {1}`n  请退出正在运行的 Kuraya（以及停在该目录里的资源管理器窗口）后重试。原有安装未改动。"
     'path-added'  = '  已把 Kuraya 加入用户 PATH, 请新开一个终端。'
     done        = '  完成! 新终端里运行 kuraya --version 验证。'
   }
@@ -29,6 +30,7 @@ $Msg = @{
     'will-install' = '  將安裝到 {0}'
     downloading = '  下載 {0}'
     installing  = '  安裝到 {0}'
+    'in-use'    = "  安裝目錄被占用: {0}`n  {1}`n  請結束正在執行的 Kuraya（以及停在該目錄裡的檔案總管視窗）後重試。原有安裝未變動。"
     'path-added'  = '  已把 Kuraya 加入使用者 PATH，請新開一個終端。'
     done        = '  完成！在新終端裡執行 kuraya --version 驗證。'
   }
@@ -38,6 +40,7 @@ $Msg = @{
     'will-install' = '  Will install to {0}'
     downloading = '  Downloading {0}'
     installing  = '  Installing to {0}'
+    'in-use'    = "  Install folder is in use: {0}`n  {1}`n  Close the running Kuraya (and any Explorer window sitting in that folder), then retry. Your existing install is untouched."
     'path-added'  = '  Added Kuraya to your user PATH — open a new terminal.'
     done        = '  Done! Run kuraya --version in a new terminal to verify.'
   }
@@ -85,9 +88,33 @@ try {
     Invoke-WebRequest -Uri $Url -OutFile $Zip
 
     Write-Host (Get-Msg 'installing' $Dest)
-    if (Test-Path $Dest) { Remove-Item $Dest -Recurse -Force }
+    # 先解压再动现有安装: 新文件没就位之前不碰旧目录
     Expand-Archive -Path $Zip -DestinationPath $Tmp
-    Move-Item (Join-Path $Tmp 'Kuraya') $Dest
+    $New = Join-Path $Tmp 'Kuraya'
+    if (Test-Path $Dest) {
+        # 不能用 Remove-Item 直接删: 运行中的 exe 和已加载的 DLL 删不掉,
+        # 其余文件却已经删光, 接着 Move-Item 又因 $Dest 还在而失败 ——
+        # 安装目录就此残废。改名则要么整体成功要么整体失败, 失败时原样不动。
+        $Old = "$Dest.old"
+        if (Test-Path $Old) { Remove-Item $Old -Recurse -Force -ErrorAction SilentlyContinue }
+        try {
+            Rename-Item -LiteralPath $Dest -NewName (Split-Path $Old -Leaf) -ErrorAction Stop
+        } catch {
+            # 带上 PowerShell 的原话: 占用之外还可能是权限/ACL, 只给猜测会把人带偏
+            Write-Host (Get-Msg 'in-use' @($Dest, $_.Exception.Message))
+            exit 1
+        }
+        try {
+            Move-Item -LiteralPath $New -Destination $Dest -ErrorAction Stop
+        } catch {
+            # 新目录没就位, 把旧的换回去, 不留半残状态
+            Rename-Item -LiteralPath $Old -NewName (Split-Path $Dest -Leaf) -ErrorAction SilentlyContinue
+            throw
+        }
+        Remove-Item $Old -Recurse -Force -ErrorAction SilentlyContinue
+    } else {
+        Move-Item -LiteralPath $New -Destination $Dest
+    }
 } finally {
     Remove-Item $Tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

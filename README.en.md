@@ -31,8 +31,13 @@ A local organizer for JAV movies. Drop your downloaded movies into a folder and 
 - macOS
 
 ```
+brew tap tenngoxars/tap
+brew trust tenngoxars/tap
 brew install tenngoxars/tap/kuraya
 ```
+
+> Recent Homebrew refuses to load formulae from untrusted third-party taps, so `brew trust` is required (older versions lack the command — just skip it and install).
+
 - Windows
 
 ```

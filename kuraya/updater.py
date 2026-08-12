@@ -39,6 +39,9 @@ CHECK_INTERVAL = 24 * 3600
 FAIL_INTERVAL = 3600
 TIMEOUT = (3, 5)          # 更新提示不值得让人等，超时从严
 DOWNLOAD_TIMEOUT = (10, 60)  # 安装包下载放宽
+ERROR_LINES = 6           # brew 失败时透出的输出行数（够放下 Error 与解法）
+DOWNLOAD_TRIES = 3        # 含首次；网络抖动重试
+RETRY_BACKOFF = (1, 3)    # 每次重试前的等待秒数，用尽后按最后一个值等
 
 _shown = False  # 同一进程只在主流程开头提示一次
 
@@ -129,6 +132,10 @@ def show():
     # 平白给定时任务和脚本调用添一次网络等待
     if console.QUIET or not console.interactive():
         return
+    # 上次延迟替换失败的话，用户正是在这一刻纳闷「怎么还是旧版本」
+    stale = _pending_failure()
+    if stale:
+        console.say(f'  {C.RED}✕{C.RESET} {stale}')
     notice = text()
     if notice:
         _shown = True
@@ -141,6 +148,16 @@ def update(yes=False, quiet=False):
     # 打包后 PYTHONIOENCODING 不一定生效，中文提示须显式指定输出编码
     console.ensure_utf8()
     enable_ansi()
+
+    stale = _pending_failure()
+    if stale:
+        if quiet:
+            # 与 brew 分支同一套：stdout 只留 updated= 一行给脚本判断，
+            # 诊断走 stderr。不能因为 quiet 就把读出来的原因丢掉——
+            # 日志已经在 _pending_failure 里删了，这是它最后一次露面
+            print(stale, file=sys.stderr)
+        else:
+            print(f'  {C.RED}✕{C.RESET} {stale}')
 
     if _brew_install():
         # brew 维护自己的版本记录（Cellar 目录、formula sha256），
@@ -291,14 +308,24 @@ def _brew_update(yes=False, quiet=False):
         print(f'  {C.GREY}{tr("检测到 Homebrew 安装，正在调用 brew upgrade kuraya……")}'
               f'{C.RESET}')
 
-    ok, version, already = _run_brew_upgrade(quiet=quiet)
+    ok, version, already, err = _run_brew_upgrade(quiet=quiet)
     if quiet:
+        # 稳定的一行给脚本判断，brew 的报错走 stderr 不污染它
+        if err:
+            print(err, file=sys.stderr)
         print(f'updated={version or ("none" if already else "error")}')
         return 0 if ok else 1
 
     if not ok:
-        fail_msg = tr('brew upgrade 执行失败，请手动运行该命令查看原因')
-        print(f'  {C.RED}✕{C.RESET} {fail_msg}')
+        if err:
+            # brew 的报错自带解法（如未信任 tap 会给出 brew trust 命令），
+            # 原样透出；吞掉再让用户手动重跑一遍等于没给诊断
+            print(f'  {C.RED}✕{C.RESET} {tr("brew upgrade 执行失败：")}')
+            for line in err.splitlines():
+                print(f'    {C.GREY}{line}{C.RESET}')
+        else:
+            fail_msg = tr('brew upgrade 执行失败，请手动运行该命令查看原因')
+            print(f'  {C.RED}✕{C.RESET} {fail_msg}')
         return 1
     if already:
         latest_msg = tr('已是最新版本 v{__version__}', __version__=__version__)
@@ -311,8 +338,10 @@ def _brew_update(yes=False, quiet=False):
 
 def _run_brew_upgrade(quiet=False):
     """
-    执行 brew upgrade kuraya。返回 (是否成功, 新版本号, 是否本就最新)。
+    执行 brew upgrade kuraya。返回 (是否成功, 新版本号, 是否本就最新, 报错)。
     新版本号从 brew list --versions 读取。
+    失败时带回 brew 输出的末尾几行：brew 的报错本身就是诊断（未信任 tap、
+    权限、网络等各有解法），不在这里匹配错误模式——brew 措辞一变就失效。
     必须**先刷新 tap 再 upgrade**：brew 不自动刷新 tap 索引，本地
     formula 停在旧版时 upgrade 会「成功」装到旧 formula 的版本（永远
     追不上最新）；全量 brew update 会拉 homebrew-core 等所有仓库
@@ -355,12 +384,14 @@ def _run_brew_upgrade(quiet=False):
         print(f'  {C.GREY}{tr("tap 刷新失败，可能不是最新版本")}{C.RESET}')
     result = upgrade()
     if result is None:
-        return False, '', False
+        return False, '', False, ''
     output = (result.stdout or '') + (result.stderr or '')
     if result.returncode != 0:
-        return False, '', False
+        # brew 把 Error 放在最后，取末尾即可；空行剔掉免得刷屏
+        lines = [ln for ln in output.splitlines() if ln.strip()]
+        return False, '', False, '\n'.join(lines[-ERROR_LINES:])
     if 'up-to-date' in output or 'already installed' in output:
-        return True, '', True
+        return True, '', True, ''
 
     version = ''
     try:
@@ -369,7 +400,7 @@ def _run_brew_upgrade(quiet=False):
         version = listed.stdout.strip().split()[-1]
     except (OSError, IndexError):
         version = ''
-    return True, version, False
+    return True, version, False, ''
 
 
 def _brew_install():
@@ -412,6 +443,35 @@ def _asset_url(version):
             f'Kuraya-{version}-{os_arch}.zip')
 
 
+def _fetch(url, zip_path):
+    """
+    下载安装包到 zip_path。成功返回 None，失败返回最后一次异常。
+
+    网络类失败必须重试：几十 MB 的单流传输中途断一次很常见（连 GitHub
+    尤其如此），一次卡顿不该让整个更新失败。非 200 不重试——资产不存在
+    重试多少次结果都一样，直接抛 UpdateError 让调用方原样报出来。
+    """
+    failed = None
+    for attempt in range(DOWNLOAD_TRIES):
+        try:
+            with requests.get(url, stream=True,
+                              timeout=DOWNLOAD_TIMEOUT) as resp:
+                if resp.status_code != 200:
+                    raise UpdateError(tr("下载失败：{status} {url}",
+                                         status=resp.status_code, url=url))
+                with open(zip_path, 'wb') as fp:
+                    for chunk in resp.iter_content(65536):
+                        fp.write(chunk)
+            return None
+        # requests 的异常全是 OSError 子类，磁盘写入失败也一并兜住
+        except OSError as exc:
+            failed = exc
+            if attempt < DOWNLOAD_TRIES - 1:
+                time.sleep(RETRY_BACKOFF[min(attempt,
+                                             len(RETRY_BACKOFF) - 1)])
+    return failed
+
+
 def _download(version):
     """
     下载并解压指定版本的安装包，返回 (程序目录, 临时根)。
@@ -420,14 +480,16 @@ def _download(version):
     url = _asset_url(version)
     tmp = Path(tempfile.mkdtemp(prefix='kuraya-update-'))
     zip_path = tmp / 'kuraya.zip'
+    failed = _fetch(url, zip_path)
+    if failed is not None:
+        # 失败就把临时目录收掉：留着只是几十 MB 的半截 zip，谁也用不上
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise UpdateError(
+            tr('下载失败（已重试 {tries} 次）：{kind}',
+               tries=DOWNLOAD_TRIES - 1, kind=type(failed).__name__)
+            + tr('（网络不稳或连不上 GitHub：可设 HTTPS_PROXY 后重试，'
+                 '或到 {url} 手动下载解压）', url=RELEASES_URL)) from failed
     try:
-        with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT) as resp:
-            if resp.status_code != 200:
-                raise UpdateError(tr("下载失败：{status} {url}",
-                                     status=resp.status_code, url=url))
-            with open(zip_path, 'wb') as fp:
-                for chunk in resp.iter_content(65536):
-                    fp.write(chunk)
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(tmp / 'x')
             # zipfile 不保留 Unix 权限位（unzip 命令会），
@@ -439,15 +501,15 @@ def _download(version):
                         (tmp / 'x' / info.filename).chmod(perm)
                     except OSError:
                         pass
-    except UpdateError:
-        raise
-    except (requests.RequestException, OSError, zipfile.BadZipFile) as exc:
-        raise UpdateError(tr("下载或解压失败：{kind}",
+    except (OSError, zipfile.BadZipFile) as exc:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise UpdateError(tr('解压失败：{kind}',
                              kind=type(exc).__name__)) from exc
 
     new = tmp / 'x' / 'Kuraya'
     exe = 'Kuraya.exe' if sys.platform == 'win32' else 'Kuraya'
     if not new.is_dir() or not (new / exe).is_file():
+        shutil.rmtree(tmp, ignore_errors=True)
         raise UpdateError(tr("安装包结构不符，已放弃（现有安装未动）"))
     if os.name != 'nt':
         # 双保险：即使 zip 没带权限位，可执行文件也必须有 +x
@@ -541,6 +603,48 @@ try {{
         return True
     except OSError:
         return False
+
+
+def _pending_failure():
+    """
+    读回延迟替换留下的结果。上面的脚本把 PENDING/OK/FAIL 写进临时目录的
+    update.log，没人读回来的话，延迟替换失败时用户重开程序只会发现版本没变，
+    屏幕上一个字都没有——原因明明已经写在盘上。
+
+    读到 FAIL 返回提示并清掉临时目录；PENDING 说明脚本还在等程序退出，
+    那个目录归它用，不能碰。无事返回空串。
+
+    必须按 utf-8-sig 读：Windows PowerShell 5.1 的 Set-Content -Encoding UTF8
+    写的是带 BOM 的文件，而 BOM 不是空白字符、strip() 去不掉，按 utf-8 读会
+    让 startswith 全部落空——报错读不出来还顺手把日志删了，等于没做。
+    """
+    if sys.platform != 'win32':
+        return ''
+    try:
+        logs = list(Path(tempfile.gettempdir())
+                    .glob('kuraya-update-*/update.log'))
+    except OSError:
+        return ''
+    reason, newest = '', -1.0
+    for log in logs:
+        try:
+            content = log.read_text(encoding='utf-8-sig',
+                                    errors='replace').strip()
+            stamp = log.stat().st_mtime
+        except OSError:
+            continue
+        if content.startswith('PENDING'):
+            continue
+        # 多份残留时报最近那次：不同次失败原因可能不同，报错次序会带偏排查
+        if content.startswith('FAIL') and stamp >= newest:
+            newest = stamp
+            reason = content.removeprefix('FAIL:').strip() or content
+        # OK 的残留（脚本自清失败）一并扫掉，免得下次误报
+        shutil.rmtree(log.parent, ignore_errors=True)
+    if not reason:
+        return ''
+    return (tr('上次更新未完成：{reason}', reason=reason)
+            + tr('（可到下载页手动下载解压：{url}）', url=RELEASES_URL))
 
 
 def _replace(new_dir, target):

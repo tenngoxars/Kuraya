@@ -105,8 +105,12 @@ jobs:
             echo ""
             echo "命令行安装（macOS）："
             echo '```bash'
+            echo "brew tap tenngoxars/tap"
+            echo "brew trust tenngoxars/tap"
             echo "brew install tenngoxars/tap/kuraya"
             echo '```'
+            echo ""
+            echo "> 新版 Homebrew 会拒绝加载未信任的第三方 tap，\`brew trust\` 这步不能省（旧版没有该命令，跳过直接安装即可）。"
             echo ""
             echo "## 各平台包 SHA256（更新 tap formula 时用）"
             echo '```'

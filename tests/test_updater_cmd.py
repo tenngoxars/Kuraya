@@ -83,7 +83,7 @@ class UpdateCommand(unittest.TestCase):
                 mock.patch.object(updater.sys, 'platform', 'darwin'), \
                 mock.patch.object(updater.sys, 'executable', exe), \
                 mock.patch.object(updater, '_run_brew_upgrade',
-                                  return_value=(True, '0.4.0', False)) as run:
+                                  return_value=(True, '0.4.0', False, '')) as run:
             self.assertEqual(updater.update(yes=True), 0)
         run.assert_called_once()
 
@@ -93,7 +93,7 @@ class UpdateCommand(unittest.TestCase):
                 mock.patch.object(updater.sys, 'platform', 'darwin'), \
                 mock.patch.object(updater.sys, 'executable', exe), \
                 mock.patch.object(updater, '_run_brew_upgrade',
-                                  return_value=(True, '0.4.0', False)):
+                                  return_value=(True, '0.4.0', False, '')):
             self.assertEqual(updater.update(yes=True, quiet=True), 0)
 
     def test_brew_failure_reported(self):
@@ -102,7 +102,7 @@ class UpdateCommand(unittest.TestCase):
                 mock.patch.object(updater.sys, 'platform', 'darwin'), \
                 mock.patch.object(updater.sys, 'executable', exe), \
                 mock.patch.object(updater, '_run_brew_upgrade',
-                                  return_value=(False, '', False)):
+                                  return_value=(False, '', False, '')):
             self.assertEqual(updater.update(yes=True), 1)
 
     def test_brew_confirm_cancels(self):
@@ -127,7 +127,7 @@ class UpdateCommand(unittest.TestCase):
                 mock.Mock(returncode=0, stdout='kuraya 0.4.0\n', stderr=''),
             ]
             self.assertEqual(updater._run_brew_upgrade(),
-                             (True, '0.4.0', False))
+                             (True, '0.4.0', False, ''))
 
     def test_run_brew_upgrade_already_latest(self):
         with mock.patch.object(updater.subprocess, 'run') as run:
@@ -139,13 +139,13 @@ class UpdateCommand(unittest.TestCase):
                           stderr=''),
             ]
             self.assertEqual(updater._run_brew_upgrade(),
-                             (True, '', True))
+                             (True, '', True, ''))
 
     def test_run_brew_upgrade_missing_brew(self):
         with mock.patch.object(updater.subprocess, 'run',
                                side_effect=FileNotFoundError):
             self.assertEqual(updater._run_brew_upgrade(),
-                             (False, '', False))
+                             (False, '', False, ''))
 
     def test_quiet_output(self):
         new_dir = Path(tempfile.mkdtemp())
@@ -159,6 +159,23 @@ class UpdateCommand(unittest.TestCase):
                 mock.patch.object(updater, '_replace'):
             code = updater.update(yes=True, quiet=True)
         self.assertEqual(code, 0)
+
+    def test_quiet_routes_pending_failure_to_stderr(self):
+        """quiet 的 stdout 只留 updated= 一行给脚本判断，但上次更新失败的原因
+        不能因此丢掉——日志在 _pending_failure 里已被删除，这是它最后一次露面"""
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(updater, 'latest', return_value='0.2.3'), \
+                self.frozen()[0], self.frozen()[1], \
+                mock.patch.object(
+                    updater, '_pending_failure',
+                    return_value='上次更新未完成：Access is denied'), \
+                redirect_stdout(out), redirect_stderr(err):
+            code = updater.update(yes=True, quiet=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(out.getvalue().strip(), 'updated=none')
+        self.assertIn('Access is denied', err.getvalue())
 
     def test_quiet_none_output(self):
         with mock.patch.object(updater, 'latest',
@@ -187,7 +204,7 @@ class BrewUpgrade(unittest.TestCase):
             mock.Mock(returncode=0, stdout='', stderr=''),
             mock.Mock(returncode=0, stdout='kuraya 0.5.12', stderr=''),
         ]
-        (ok, version, already), run = self.run_upgrade(outcomes)
+        (ok, version, already, _err), run = self.run_upgrade(outcomes)
         self.assertTrue(ok)
         self.assertEqual(version, '0.5.12')
         self.assertFalse(already)
@@ -205,7 +222,7 @@ class BrewUpgrade(unittest.TestCase):
             mock.Mock(returncode=0, stdout='', stderr=''),   # upgrade
             mock.Mock(returncode=0, stdout='kuraya 0.5.12', stderr=''),
         ]
-        (ok, version, already), _ = self.run_upgrade(outcomes)
+        (ok, version, already, _err), _ = self.run_upgrade(outcomes)
         self.assertTrue(ok)
         self.assertEqual(version, '0.5.12')
         self.assertFalse(already)
@@ -218,7 +235,7 @@ class BrewUpgrade(unittest.TestCase):
             mock.Mock(returncode=0,
                       stdout='kuraya 0.5.12 already up-to-date.', stderr=''),
         ]
-        (_, _, _), run = self.run_upgrade(outcomes)
+        (_, _, _, _), run = self.run_upgrade(outcomes)
         env = run.call_args_list[2].kwargs['env']  # 第三次调用是 upgrade
         self.assertEqual(env['HOMEBREW_NO_AUTO_UPDATE'], '1')
 
@@ -230,7 +247,7 @@ class BrewUpgrade(unittest.TestCase):
             mock.Mock(returncode=0,
                       stdout='kuraya 0.5.12 already up-to-date.', stderr=''),
         ]
-        ok, version, already = self.run_upgrade(outcomes)[0]
+        ok, version, already, _err = self.run_upgrade(outcomes)[0]
         self.assertTrue(ok)
         self.assertEqual(version, '')
         self.assertTrue(already)
@@ -238,7 +255,7 @@ class BrewUpgrade(unittest.TestCase):
     def test_brew_missing_returns_failure(self):
         """brew 不存在时 tap 刷新与 upgrade 都失败，返回失败"""
         outcomes = [OSError('no brew'), OSError('no brew'), OSError('no brew')]
-        (ok, version, already), _ = self.run_upgrade(outcomes)
+        (ok, version, already, _err), _ = self.run_upgrade(outcomes)
         self.assertFalse(ok)
         self.assertEqual(version, '')
         self.assertFalse(already)
@@ -253,10 +270,65 @@ class BrewUpgrade(unittest.TestCase):
                        'tenngoxars/tap/kuraya 0.5.18 already installed',
                        stderr=''),
         ]
-        ok, version, already = self.run_upgrade(outcomes)[0]
+        ok, version, already, _err = self.run_upgrade(outcomes)[0]
         self.assertTrue(ok)
         self.assertEqual(version, '')
         self.assertTrue(already)
+
+    def test_failure_carries_brew_error(self):
+        """brew 失败时带回它自己的报错（如未信任 tap 会给出 brew trust
+        命令）：吞掉再让用户手动重跑等于没给诊断。只取末尾几行"""
+        noise = '\n'.join(f'==> line {i}' for i in range(20))
+        outcomes = [
+            mock.Mock(returncode=0, stdout='/tmp/tap', stderr=''),
+            mock.Mock(returncode=0, stdout='Already up to date.', stderr=''),
+            mock.Mock(returncode=1, stdout=noise + '\n\n',
+                      stderr='Error: Refusing to load formula '
+                             'tenngoxars/tap/kuraya from untrusted tap.\n'
+                             'Run `brew trust tenngoxars/tap` to trust it.\n'),
+        ]
+        ok, version, already, err = self.run_upgrade(outcomes)[0]
+        self.assertFalse(ok)
+        self.assertEqual(version, '')
+        self.assertFalse(already)
+        self.assertIn('brew trust tenngoxars/tap', err)
+        self.assertEqual(len(err.splitlines()), updater.ERROR_LINES)
+        self.assertNotIn('\n\n', err)          # 空行剔掉不刷屏
+
+    def test_failure_error_surfaced_to_user(self):
+        """报错要真的打到用户眼前，不是只存在返回值里"""
+        import io
+        from contextlib import redirect_stdout
+        exe = '/opt/homebrew/Cellar/kuraya/0.3.0/libexec/Kuraya/Kuraya'
+        err = 'Run `brew trust tenngoxars/tap` to trust it.'
+        buffer = io.StringIO()
+        with mock.patch.object(updater, 'FROZEN', True), \
+                mock.patch.object(updater.sys, 'platform', 'darwin'), \
+                mock.patch.object(updater.sys, 'executable', exe), \
+                mock.patch.object(updater, '_run_brew_upgrade',
+                                  return_value=(False, '', False, err)), \
+                redirect_stdout(buffer):
+            code = updater.update(yes=True)
+        self.assertEqual(code, 1)
+        self.assertIn('brew trust tenngoxars/tap', buffer.getvalue())
+
+    def test_quiet_keeps_stdout_parseable(self):
+        """quiet 的一行契约给脚本用，报错走 stderr 不掺进去"""
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        exe = '/opt/homebrew/Cellar/kuraya/0.3.0/libexec/Kuraya/Kuraya'
+        err = 'Error: Refusing to load formula'
+        out, errbuf = io.StringIO(), io.StringIO()
+        with mock.patch.object(updater, 'FROZEN', True), \
+                mock.patch.object(updater.sys, 'platform', 'darwin'), \
+                mock.patch.object(updater.sys, 'executable', exe), \
+                mock.patch.object(updater, '_run_brew_upgrade',
+                                  return_value=(False, '', False, err)), \
+                redirect_stdout(out), redirect_stderr(errbuf):
+            code = updater.update(yes=True, quiet=True)
+        self.assertEqual(code, 1)
+        self.assertEqual(out.getvalue().strip(), 'updated=error')
+        self.assertIn(err, errbuf.getvalue())
 
     def test_tap_refresh_failure_warns(self):
         """tap 刷新失败时提示可能非最新（formula 停旧版会装旧版），
@@ -270,7 +342,7 @@ class BrewUpgrade(unittest.TestCase):
         ]
         buffer = io.StringIO()
         with redirect_stdout(buffer):
-            (ok, version, _), _ = self.run_upgrade(outcomes, quiet=False)
+            (ok, version, _, _), _ = self.run_upgrade(outcomes, quiet=False)
         self.assertTrue(ok)
         self.assertIn('tap 刷新失败', buffer.getvalue())
         # quiet 模式静默

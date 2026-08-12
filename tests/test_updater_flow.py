@@ -4,6 +4,7 @@
 
     python -m unittest discover tests
 """
+import os
 import shutil
 import tempfile
 import unittest
@@ -65,9 +66,50 @@ class Download(unittest.TestCase):
             resp = self.FakeResp(b'')
             resp.status_code = 404
             with mock.patch.object(updater.requests, 'get',
-                                   return_value=resp):
+                                   return_value=resp) as get:
                 with self.assertRaises(updater.UpdateError):
                     updater._download('0.3.0')
+            # 资产不存在，重试多少次都一样，只该请求一次
+            self.assertEqual(get.call_count, 1)
+
+    def test_network_failure_retried(self):
+        """几十 MB 单流下载中途断一次很常见，一次卡顿不该判死整个更新"""
+        with tempfile.TemporaryDirectory() as tmp:
+            zip_path = self.make_zip(tmp)
+            timeout = updater.requests.exceptions.ReadTimeout('stalled')
+            with mock.patch.object(
+                    updater.requests, 'get',
+                    side_effect=[timeout, timeout,
+                                 self.FakeResp(zip_path.read_bytes())]) as get, \
+                    mock.patch.object(updater.time, 'sleep'):
+                new, tmp_root = updater._download('0.3.0')
+            self.assertEqual(get.call_count, updater.DOWNLOAD_TRIES)
+            self.assertTrue((new / 'Kuraya').is_file())
+            self.addCleanup(shutil.rmtree, tmp_root, ignore_errors=True)
+
+    def test_network_failure_gives_up_with_next_step(self):
+        """重试用尽后的报错要能让人往下走：异常类名之外还得给出手动下载地址"""
+        timeout = updater.requests.exceptions.ConnectTimeout('no route')
+        with mock.patch.object(updater.requests, 'get',
+                               side_effect=timeout) as get, \
+                mock.patch.object(updater.time, 'sleep') as sleep:
+            with self.assertRaises(updater.UpdateError) as caught:
+                updater._download('0.3.0')
+        self.assertEqual(get.call_count, updater.DOWNLOAD_TRIES)
+        self.assertEqual(sleep.call_count, updater.DOWNLOAD_TRIES - 1)
+        message = str(caught.exception)
+        self.assertIn('ConnectTimeout', message)
+        self.assertIn('HTTPS_PROXY', message)
+        self.assertIn(updater.RELEASES_URL, message)
+
+    def test_extract_failure_named_separately(self):
+        """下载成功但包坏了要说「解压失败」，跟下载失败混成一句用户没法判断"""
+        with mock.patch.object(updater.requests, 'get',
+                               return_value=self.FakeResp(b'not a zip')):
+            with self.assertRaises(updater.UpdateError) as caught:
+                updater._download('0.3.0')
+        self.assertIn('BadZipFile', str(caught.exception))
+        self.assertNotIn('HTTPS_PROXY', str(caught.exception))
 
     def test_missing_exe_raises(self):
         """zip 里没有可执行文件说明包结构不对，必须拒绝"""
@@ -267,6 +309,74 @@ class Replace(unittest.TestCase):
                 updater._replace(self.new, self.target)
         # 旧目录未被破坏（rename 始终失败，原样保留）
         self.assertTrue((self.root / 'Kuraya').is_dir())
+
+
+class PendingFailure(unittest.TestCase):
+    """延迟替换的结果必须读回来：脚本把原因写在盘上，没人读的话
+    用户重开只看到版本没变，屏幕上一个字都没有"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def write_log(self, content, bom=False, name='abc'):
+        d = self.tmp / f'kuraya-update-{name}'
+        d.mkdir()
+        # bom=True 复现 Windows PowerShell 5.1：Set-Content -Encoding UTF8
+        # 写的是带 BOM 的文件，脚本报 FAIL 时走的正是这条路
+        (d / 'update.log').write_text(
+            content, encoding='utf-8-sig' if bom else 'utf-8')
+        return d
+
+    def run_check(self, platform='win32'):
+        with mock.patch.object(updater.sys, 'platform', platform), \
+                mock.patch.object(updater.tempfile, 'gettempdir',
+                                  return_value=str(self.tmp)):
+            return updater._pending_failure()
+
+    def test_failure_reported_and_cleaned(self):
+        d = self.write_log('FAIL: Access to the path is denied')
+        message = self.run_check()
+        self.assertIn('Access to the path is denied', message)
+        self.assertIn(updater.RELEASES_URL, message)
+        self.assertFalse(d.exists())        # 报过一次就清掉，不重复打扰
+
+    def test_bom_prefixed_failure_still_read(self):
+        """PS 5.1 写的 update.log 带 BOM，而 BOM 不是空白字符、strip() 去不掉。
+        按 utf-8 读会让 startswith 全部落空——报错读不出来还顺手把日志删了"""
+        d = self.write_log('FAIL: Access to the path is denied', bom=True)
+        message = self.run_check()
+        self.assertIn('Access to the path is denied', message)
+        self.assertFalse(d.exists())
+
+    def test_newest_failure_wins(self):
+        """多份残留时报最近那次：不同次的失败原因可能完全不同"""
+        old = self.write_log('FAIL: timed out waiting', name='old')
+        new = self.write_log('FAIL: Access to the path is denied', name='new')
+        os.utime(old / 'update.log', (1_600_000_000, 1_600_000_000))
+        os.utime(new / 'update.log', (1_700_000_000, 1_700_000_000))
+        message = self.run_check()
+        self.assertIn('Access to the path is denied', message)
+        self.assertNotIn('timed out', message)
+        self.assertFalse(old.exists())
+        self.assertFalse(new.exists())
+
+    def test_pending_left_alone(self):
+        """脚本可能还在等程序退出，那个目录归它用，不能碰也不能误报"""
+        d = self.write_log('PENDING')
+        self.assertEqual(self.run_check(), '')
+        self.assertTrue(d.exists())
+
+    def test_success_leftover_swept(self):
+        d = self.write_log('OK')
+        self.assertEqual(self.run_check(), '')
+        self.assertFalse(d.exists())
+
+    def test_other_platforms_skip(self):
+        """延迟替换是 Windows 专属，别的平台不该扫临时目录"""
+        d = self.write_log('FAIL: boom')
+        self.assertEqual(self.run_check(platform='darwin'), '')
+        self.assertTrue(d.exists())
 
 
 if __name__ == '__main__':

@@ -7,7 +7,8 @@
 #   2. 上传 zip 到 GitHub Releases（如 v0.2.0 的资产 Kuraya-0.2.0-mac-arm64.zip）
 #   3. 把 URL 与 sha256 填入下方, 将本文件发布到
 #      github.com/tenngoxars/homebrew-tap 仓库的 Formula/kuraya.rb
-#   4. 用户安装: brew install tenngoxars/tap/kuraya
+#   4. 用户安装: brew tap + brew trust tenngoxars/tap + brew install
+#      （新版 brew 拒绝加载未信任的第三方 tap, 不 trust 装不上）
 #
 # 注意: mac 仅 Apple Silicon（GitHub 已无 Intel macOS runner），url/sha256 放顶层
 # （Homebrew 不允许 on_arm 块内含 url/sha256，readall --arch=all 会失败）；

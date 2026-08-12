@@ -4,6 +4,8 @@
 
     python -m unittest discover tests
 """
+import shutil
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -262,6 +264,22 @@ class Show(unittest.TestCase):
         with mock.patch('kuraya.console.say') as say:
             updater.show()
         say.assert_not_called()
+
+    def test_reports_failed_deferred_update(self):
+        """延迟替换失败后用户重开程序，正是他纳闷「怎么还是旧版本」的时刻，
+        这一刻必须把盘上那条原因说出来"""
+        settings.save_update_state(str(int(time.time())), '0.2.3')
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / 'kuraya-update-xyz').mkdir()
+        (tmp / 'kuraya-update-xyz' / 'update.log').write_text(
+            'FAIL: Access to the path is denied', encoding='utf-8')
+        with mock.patch.object(updater.sys, 'platform', 'win32'), \
+                mock.patch.object(updater.tempfile, 'gettempdir',
+                                  return_value=str(tmp)), \
+                mock.patch('kuraya.console.say') as say:
+            updater.show()
+        self.assertIn('Access to the path is denied', say.call_args[0][0])
 
 
 if __name__ == '__main__':

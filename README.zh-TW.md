@@ -31,8 +31,13 @@
 - macOS
 
 ```
+brew tap tenngoxars/tap
+brew trust tenngoxars/tap
 brew install tenngoxars/tap/kuraya
 ```
+
+> 新版 Homebrew 會拒絕載入未信任的第三方 tap，`brew trust` 這步不能省（舊版沒有該命令，略過直接安裝即可）。
+
 - Windows
 
 ```

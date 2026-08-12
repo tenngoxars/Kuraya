@@ -162,6 +162,33 @@ class RunExecBranches(unittest.TestCase):
             menu.run()
         self.assertEqual(clear.call_count, 2)
 
+    def test_update_deferred_exits_menu(self):
+        """选 5 更新且安排了延迟替换：菜单直接退出（返回 0），
+        进程退出后替换脚本才能执行；不安排则照常等按键"""
+        with mock.patch('kuraya.keys.read_key', side_effect=['5']), \
+             mock.patch.object(menu, 'clear_screen'), \
+             mock.patch('kuraya.updater.text', return_value=''), \
+             mock.patch.object(menu.updater, 'update', return_value=0), \
+             mock.patch.object(menu.updater, 'deferred_pending',
+                               return_value=True), \
+             mock.patch.object(menu, 'pause') as pause:
+            code = menu.run()
+        self.assertEqual(code, 0)
+        pause.assert_not_called()
+
+    def test_update_direct_keeps_menu(self):
+        """选 5 更新且直接替换成功（未安排延迟替换）：菜单继续，等按键"""
+        with mock.patch('kuraya.keys.read_key', side_effect=['5', 'esc']), \
+             mock.patch.object(menu, 'clear_screen'), \
+             mock.patch('kuraya.updater.text', return_value=''), \
+             mock.patch.object(menu.updater, 'update', return_value=0), \
+             mock.patch.object(menu.updater, 'deferred_pending',
+                               return_value=False), \
+             mock.patch.object(menu, 'pause') as pause:
+            code = menu.run()
+        self.assertEqual(code, 0)
+        pause.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()

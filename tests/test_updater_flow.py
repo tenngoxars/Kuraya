@@ -175,6 +175,8 @@ class ReplaceLater(unittest.TestCase):
             code = updater.update(yes=True)
         self.assertEqual(code, 0)
         later.assert_called_once()
+        # 安排了延迟替换：菜单据此退出进程让脚本执行
+        self.assertTrue(updater.deferred_pending())
 
     def test_later_replace_writes_script_and_launches(self):
         """延迟脚本包含目标与新目录路径，用脱离控制台的 PowerShell 启动"""
@@ -216,6 +218,24 @@ class ReplaceLater(unittest.TestCase):
         self.assertTrue(content.startswith('FAIL'))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
 
+    def test_direct_replace_success_no_deferred_flag(self):
+        """目录未被占用直接替换成功时，不设延迟替换标志（菜单无需退出）"""
+        new_dir = Path(tempfile.mkdtemp())
+        (new_dir / 'Kuraya').mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, new_dir, ignore_errors=True)
+        exe = '/opt/Kuraya/Kuraya.exe'
+        with mock.patch.object(updater, 'FROZEN', True), \
+                mock.patch.object(updater.sys, 'platform', 'win32'), \
+                mock.patch.object(updater.sys, 'executable', exe), \
+                mock.patch.object(updater, 'latest', return_value='9.9.9'), \
+                mock.patch('builtins.input', return_value='y'), \
+                mock.patch.object(updater, '_download',
+                                  return_value=(new_dir, new_dir.parent)), \
+                mock.patch.object(updater, '_replace'):
+            code = updater.update(yes=True)
+        self.assertEqual(code, 0)
+        self.assertFalse(updater.deferred_pending())
+
     def test_update_falls_back_on_winerror32(self):
         """WinError 32（共享冲突，如资源管理器占用目录）同样走延迟替换"""
         new_dir = Path(tempfile.mkdtemp())
@@ -237,6 +257,8 @@ class ReplaceLater(unittest.TestCase):
             code = updater.update(yes=True)
         self.assertEqual(code, 0)
         later.assert_called_once()
+        # 安排了延迟替换：菜单据此退出进程让脚本执行
+        self.assertTrue(updater.deferred_pending())
 
     def test_later_replace_waits_exit_then_retries_rename(self):
         """脚本两阶段：先等进程退出（Get-Process），再重试重命名（while）。

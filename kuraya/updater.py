@@ -47,6 +47,15 @@ PENDING_STUCK = 31 * 60   # 延迟脚本等退出的时限是 30 分钟，超过
 
 _shown = False  # 同一进程只在主流程开头提示一次
 
+# 最近一次 update 是否安排了延迟替换：菜单据此退出进程让脚本执行，
+# 否则脚本等不到进程退出，替换与自动重开永远不会发生
+_deferred = False
+
+
+def deferred_pending():
+    """最近一次 update 是否安排了延迟替换（安排成功返回 True）"""
+    return _deferred
+
 
 class UpdateError(Exception):
     """更新失败。报错但不动现有安装"""
@@ -222,6 +231,8 @@ def update(yes=False, quiet=False):
     # 打包后 PYTHONIOENCODING 不一定生效，中文提示须显式指定输出编码
     console.ensure_utf8()
     enable_ansi()
+    global _deferred
+    _deferred = False
 
     stale = _pending_failure()
     if stale:
@@ -313,6 +324,7 @@ def update(yes=False, quiet=False):
             # 安排独立进程在程序退出后替换。
             if sys.platform == 'win32' and winerror in (5, 32):
                 if _replace_later(new, target, version=remote):
+                    _deferred = True
                     if app_old is not None:
                         shutil.rmtree(app_target, ignore_errors=True)
                         app_old.rename(app_target)

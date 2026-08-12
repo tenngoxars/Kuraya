@@ -340,4 +340,8 @@ def run(pending=''):
             clear_screen()
             say()
             updater.update()
+            # 延迟替换已安排：进程必须退出脚本才能替换目录，
+            # 直接结束菜单让程序退出，完成后脚本会自动重新打开
+            if updater.deferred_pending():
+                return 0
             pause()

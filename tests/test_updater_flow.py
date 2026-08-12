@@ -189,6 +189,9 @@ class ReplaceLater(unittest.TestCase):
         content = script.read_text(encoding='utf-8-sig')
         self.assertIn('/opt/Kuraya', content)
         self.assertIn('Rename-Item', content)
+        # 替换完成后自动启动新版本（用户退出一次即可，无需手动重开）
+        self.assertIn('Start-Process', content)
+        self.assertIn('STARTED', content)
         args = popen.call_args[0][0]
         self.assertEqual(args[0], 'powershell')
         self.assertEqual(args[args.index('-File') + 1], str(script))

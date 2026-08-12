@@ -189,14 +189,14 @@ def pending_notice():
         age = time.time() - log.stat().st_mtime
         if age < PENDING_STUCK:
             return tr('更新尚未完成：请退出本程序，'
-                      '等待约 10 秒后再打开，更新会自动完成')
+                      '更新完成后会自动重新打开')
         content = 'FAIL: deferred replace script was killed or stuck'
     if content.startswith('FAIL'):
         reason = content.removeprefix('FAIL:').strip() or content
         new = tmp / 'x' / 'Kuraya'
         if (new / exe_name).is_file() and _replace_later(new, target):
             return tr('上次更新未完成：{reason}。已重新安排，请退出本程序，'
-                      '等待约 10 秒后再打开，更新会自动完成', reason=reason)
+                      '更新完成后会自动重新打开', reason=reason)
         return (tr('上次更新未完成：{reason}', reason=reason)
                 + tr('（可到下载页手动下载解压：{url}）',
                      url=RELEASES_URL))
@@ -311,8 +311,8 @@ def update(yes=False, quiet=False):
                         later_msg = tr('程序目录正被占用，'
                                        '已安排程序退出后自动完成更新')
                         print(f'  {C.GOLD}◈{C.RESET} {later_msg}')
-                        close_msg = tr('请退出本程序，等待约 10 秒后再打开，'
-                                       '更新会自动完成')
+                        close_msg = tr('请退出本程序，'
+                                       '更新完成后会自动重新打开')
                         print(f'  {C.GREY}{close_msg}{C.RESET}')
                         if _installer_installed(target):
                             fallback = tr('若重新打开后版本未变，请运行安装命令：'
@@ -641,6 +641,11 @@ try {{
   Move-Item -LiteralPath $new -Destination $target -ErrorAction Stop
   Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
   Set-Content -LiteralPath $log -Value 'OK' -Encoding UTF8
+  # 替换完成：用户还没重开的话直接启动新版本，省得他手动开——
+  # 「退出→重开」会让新进程锁住目录，脚本永远等不到替换时机
+  if (-not (Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAction SilentlyContinue)) {{
+    Start-Process -FilePath '{ps_str(target / exe_name)}' -WorkingDirectory '{ps_str(target)}'
+  }}
   Remove-Item -LiteralPath '{ps_str(tmp)}' -Recurse -Force -ErrorAction SilentlyContinue
 }} catch {{
   if (Test-Path -LiteralPath $old) {{

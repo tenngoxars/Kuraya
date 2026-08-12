@@ -179,29 +179,33 @@ class ReplaceLater(unittest.TestCase):
         self.assertTrue(updater.deferred_pending())
 
     def test_later_replace_writes_script_and_launches(self):
-        """延迟脚本包含目标与新目录路径，用脱离控制台的 PowerShell 启动"""
+        """延迟批处理包含目标与新目录路径，用脱离控制台的 cmd 启动。
+
+        早期实现用 PowerShell，但安全软件会拦 %TEMP% 下脚本执行
+        （日志停在 PENDING）；cmd 批处理是系统核心组件，脚本防护
+        基本不针对它"""
         tmp = Path(tempfile.mkdtemp())
         new_dir = tmp / 'x' / 'Kuraya'
         target = Path('/opt/Kuraya')
         with mock.patch.object(updater.subprocess, 'Popen') as popen:
             ok = updater._replace_later(new_dir, target)
         self.assertTrue(ok)
-        script = tmp / 'replace.ps1'
+        script = tmp / 'replace.cmd'
         self.assertTrue(script.is_file())
         content = script.read_text(encoding='utf-8-sig')
         self.assertIn('/opt/Kuraya', content)
-        self.assertIn('Rename-Item', content)
+        self.assertIn('ren "%TARGET%"', content)
+        self.assertIn('move "%NEW%" "%TARGET%"', content)
         # 替换完成后自动启动新版本（用户退出一次即可，无需手动重开）
-        self.assertIn('Start-Process', content)
+        self.assertIn('start "" "%EXE%"', content)
         self.assertIn('STARTED', content)
         args = popen.call_args[0][0]
-        self.assertEqual(args[0], 'powershell')
-        self.assertEqual(args[args.index('-File') + 1], str(script))
+        self.assertEqual(args[0], 'cmd')
+        self.assertEqual(args[args.index('/c') + 1], str(script))
         # 判别性：脱离父进程控制台（用户点 × 关窗时 CTRL_CLOSE_EVENT
-        # 不会带走脚本；旧版无 creationflags 且带 -WindowStyle Hidden）
+        # 不会带走脚本）
         kwargs = popen.call_args[1]
         self.assertIn('creationflags', kwargs)
-        self.assertNotIn('-WindowStyle', args)
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
 
     def test_later_replace_popen_failure_marks_fail(self):
@@ -261,8 +265,8 @@ class ReplaceLater(unittest.TestCase):
         self.assertTrue(updater.deferred_pending())
 
     def test_later_replace_waits_exit_then_retries_rename(self):
-        """脚本两阶段：先等进程退出（Get-Process），再重试重命名（while）。
-        判别性：旧版固定 Start-Sleep 3 秒/纯进程等待都会失败"""
+        """批处理两阶段：先等进程退出（tasklist），再重试重命名（goto）。
+        判别性：旧版固定 sleep/纯进程等待都会失败"""
         tmp = Path(tempfile.mkdtemp())
         new_dir = tmp / 'x' / 'Kuraya'
         target = Path('/opt/Kuraya')
@@ -270,15 +274,14 @@ class ReplaceLater(unittest.TestCase):
              mock.patch.object(updater.subprocess, 'Popen'):
             ok = updater._replace_later(new_dir, target)
         self.assertTrue(ok)
-        content = (tmp / 'replace.ps1').read_text(encoding='utf-8-sig')
+        content = (tmp / 'replace.cmd').read_text(encoding='utf-8-sig')
         # 阶段 1：等进程退出（运行中的 exe 锁目录，重命名必被拒）
-        self.assertIn('Get-Process', content)
-        self.assertIn('Kuraya.exe', content)
+        self.assertIn('tasklist /FI "IMAGENAME eq Kuraya.exe"', content)
+        self.assertIn(':wait_exit', content)
         # 阶段 2：进程退出后重试重命名（防用户快速重开）
-        self.assertIn('while ($true)', content)
-        self.assertIn('Rename-Item -LiteralPath $target', content)
-        self.assertIn('$deadline', content)
-        self.assertNotIn('Start-Sleep -Seconds 3', content)
+        self.assertIn(':swap', content)
+        self.assertIn('ren "%TARGET%" "Kuraya.old"', content)
+        self.assertIn('if errorlevel 1', content)
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
 
     def test_update_fails_without_winerror5(self):

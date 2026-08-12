@@ -231,8 +231,9 @@ def pending_notice():
                     _auto_exit = True
             except OSError:
                 pass
-            return tr('更新尚未完成：请退出本程序，'
-                      '更新完成后会自动重新打开')
+            return (tr('更新尚未完成：请退出本程序，'
+                       '更新完成后会自动重新打开')
+                    + f'\n  {C.GREY}{tmp / "update.log"}{C.RESET}')
         content = 'FAIL: deferred replace script was killed or stuck'
     if content.startswith('FAIL'):
         reason = content.removeprefix('FAIL:').strip() or content
@@ -631,13 +632,16 @@ def _download(version):
 
 def _replace_later(new_dir, target, version=None):
     """
-    延迟替换：程序退出后由独立 PowerShell 脚本完成目录替换。
+    延迟替换：程序退出后由独立 cmd 批处理完成目录替换。
 
     直接替换失败（WinError 5）通常因为运行中的 exe 锁着目录——
     Windows 上进程持有的 exe 文件会阻止其所在目录被重命名。
-    脚本分两阶段：先等程序退出（轮询进程消失），再重命名新目录就位；
-    用户可能快速重开程序，所以重命名阶段也带重试与超时。
-    返回是否已安排。临时目录保留给脚本使用，脚本完成后自行清理。
+    早期用 PowerShell 实现，但安全软件会拦 %TEMP% 下脚本执行
+    （日志停在 PENDING，脚本从未运行，更新永远失败）；cmd 批处理
+    是系统核心组件，脚本防护基本不针对它。
+    批处理分两阶段：等程序退出（tasklist 轮询），再重命名目录就位
+    并启动新版。返回是否已安排。临时目录保留给批处理使用，
+    完成后自行清理。
     version 是下载的目标版本，写进临时目录供启动检查比对：
     用户手动升级到同版或更新后，残留的 PENDING/FAIL 不再误报。
     """
@@ -649,70 +653,51 @@ def _replace_later(new_dir, target, version=None):
                 ver_file.write_text(str(version), encoding='utf-8')
         except OSError:
             pass
-    script = tmp / 'replace.ps1'
+    script = tmp / 'replace.cmd'
     exe_name = 'Kuraya.exe' if sys.platform == 'win32' else 'Kuraya'
-
-    def ps_str(path):
-        return str(path).replace("'", "''")
-
-    ps = f"""$ErrorActionPreference = 'Stop'
-$log = '{ps_str(tmp / 'update.log')}'
-$target = '{ps_str(target)}'
-$new = '{ps_str(new_dir)}'
-$old = "$target.old"
-$exe = '{ps_str(target / exe_name)}'
-# 启动即写 STARTED：与 PENDING（脚本没跑起来）区分开——
-# 脚本被安全软件杀掉时停在 STARTED，诊断时能看出脚本确实执行过
-Set-Content -LiteralPath $log -Value 'STARTED' -Encoding UTF8
-# 阶段 1：等程序退出。运行中的 exe 锁着目录，重命名必被拒。
-# 提示用户退出后即通过；最长等 30 分钟（用户可能正在用，不急于退），
-# 超时按失败处理并留日志。
-$deadline = (Get-Date).AddMinutes(30)
-while (Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAction SilentlyContinue) {{
-  if ((Get-Date) -gt $deadline) {{
-    Set-Content -LiteralPath $log -Value 'FAIL: timed out waiting for the program to exit' -Encoding UTF8
-    exit 1
-  }}
-  Start-Sleep -Seconds 2
-}}
-# 阶段 2：进程已退出，重命名新目录就位。用户可能快速重开程序
-# （重开又锁上目录），所以重试直到成功或超时。单独计时：
-# 阶段 1 可能已消耗大部分时限，重试预算不应被占用。
-$deadline = (Get-Date).AddMinutes(5)
-while ($true) {{
-  try {{
-    if (Test-Path -LiteralPath $old) {{ Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction Stop }}
-    Rename-Item -LiteralPath $target -NewName ([IO.Path]::GetFileName($old)) -ErrorAction Stop
-    break
-  }} catch {{
-    if ((Get-Date) -gt $deadline) {{
-      Set-Content -LiteralPath $log -Value ('FAIL: ' + $_.Exception.Message) -Encoding UTF8
-      exit 1
-    }}
-    Start-Sleep -Seconds 2
-  }}
-}}
-try {{
-  Move-Item -LiteralPath $new -Destination $target -ErrorAction Stop
-  Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue
-  Set-Content -LiteralPath $log -Value 'OK' -Encoding UTF8
-  # 替换完成：用户还没重开的话直接启动新版本，省得他手动开——
-  # 「退出→重开」会让新进程锁住目录，脚本永远等不到替换时机
-  if (-not (Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($exe)) -ErrorAction SilentlyContinue)) {{
-    Start-Process -FilePath '{ps_str(target / exe_name)}' -WorkingDirectory '{ps_str(target)}'
-  }}
-  Remove-Item -LiteralPath '{ps_str(tmp)}' -Recurse -Force -ErrorAction SilentlyContinue
-}} catch {{
-  if (Test-Path -LiteralPath $old) {{
-    if (-not (Test-Path -LiteralPath $target)) {{
-      Rename-Item -LiteralPath $old -NewName ([IO.Path]::GetFileName($target)) -ErrorAction SilentlyContinue
-    }}
-  }}
-  Set-Content -LiteralPath $log -Value ('FAIL: ' + $_.Exception.Message) -Encoding UTF8
-}}
-"""
-    script.write_text(ps, encoding='utf-8-sig')
     log = tmp / 'update.log'
+    old_name = target.name + '.old'
+
+    def q(path):
+        # 值里可能含的引号翻倍；外层引号由 set/引用处统一加
+        return str(path).replace('"', '""')
+
+    # UTF-8 BOM 让 cmd 按 UTF-8 解析批处理（中文路径不乱码），
+    # chcp 65001 再保险一道
+    bat = f"""@echo off
+chcp 65001 >nul
+set "LOG={q(log)}"
+set "TARGET={q(target)}"
+set "NEW={q(new_dir)}"
+set "OLD={q(target.parent / old_name)}"
+set "EXE={q(target / exe_name)}"
+> "%LOG%" echo STARTED
+:wait_exit
+tasklist /FI "IMAGENAME eq {exe_name}" 2>nul | find /I "{exe_name}" >nul
+if not errorlevel 1 (
+  timeout /t 2 /nobreak >nul
+  goto wait_exit
+)
+:swap
+if exist "%OLD%" rmdir /s /q "%OLD%" 2>nul
+ren "%TARGET%" "{old_name}" 2>nul
+if errorlevel 1 (
+  timeout /t 2 /nobreak >nul
+  goto swap
+)
+move "%NEW%" "%TARGET%" >nul 2>nul
+if errorlevel 1 (
+  ren "%OLD%" "{target.name}" 2>nul
+  > "%LOG%" echo FAIL: move failed
+  exit /b 1
+)
+rmdir /s /q "%OLD%" 2>nul
+> "%LOG%" echo OK
+tasklist /FI "IMAGENAME eq {exe_name}" 2>nul | find /I "{exe_name}" >nul
+if errorlevel 1 start "" "%EXE%"
+rd /s /q "{q(tmp)}" 2>nul
+"""
+    script.write_text(bat, encoding='utf-8-sig')
     try:
         log.write_text('PENDING', encoding='utf-8')
     except OSError:
@@ -723,8 +708,7 @@ try {{
         # 延迟替换脚本会被一起杀掉，永远跑不完。
         # getattr 兜底：DETACHED_PROCESS 仅 Windows 存在，测试 mock 平台时安全。
         subprocess.Popen(
-            ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-             '-File', str(script)],
+            ['cmd', '/c', str(script)],
             creationflags=getattr(subprocess, 'DETACHED_PROCESS', 0))
         return True
     except OSError:

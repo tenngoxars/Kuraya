@@ -114,11 +114,16 @@ function sortData(list, key) {
   return arr;
 }
 
-function visibleList() {
+// 筛选子集：搜索词 + 除 excludeKey 外的所有已激活维度筛选。
+// excludeKey 用于联动计数——当前维度自身的已选值不参与该维度计数
+// （选演员 A 后演员维度的其他计数不受 A 影响），其他维度计数基于
+// 当前子集（选 A 后发行商/导演的数量随 A 的影片联动）
+function filteredList(excludeKey) {
   const q = search.value.trim().toLowerCase();
   let list = DATA;
 
   for (const dim of DIMS) {
+    if (dim.key === excludeKey) continue;
     const v = active[dim.key];
     if (v) list = list.filter(it => dim.of(it).includes(v));
   }
@@ -128,7 +133,11 @@ function visibleList() {
       it._fields.some(f => f.includes(q)) ||
       (qs && it._squashed.some(f => f.includes(qs))));
   }
-  return sortData(list, sortKey);
+  return list;
+}
+
+function visibleList() {
+  return sortData(filteredList(null), sortKey);
 }
 
 // 播放由 kuraya: 协议交给主程序处理。

@@ -196,6 +196,31 @@ class TopBar(unittest.TestCase):
         html = build_page()
         self.assertIn('ALL_DIMS.filter(d => d.values.length > 0)', html)
 
+    def test_chip_counts_follow_active_filters(self):
+        """判别性：选演员后发行商/导演的计数必须基于当前筛选子集，
+        不能还是全库静态值——维度自身筛选排除，其余维度与搜索生效"""
+        html = build_page()
+        for fragment in (
+                'function filteredList(excludeKey)',
+                'if (dim.key === excludeKey) continue',
+                'function allDimCounts(excludeKey)',
+                'const counts = allDimCounts(activeDim)',
+                'counts[d.key].length',
+                'const entries = counts[dim.key]'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, html)
+
+    def test_empty_subset_dimensions_hidden(self):
+        """判别性：子集下无值的维度要隐藏（选演员后该演员没有导演片时
+        不该出现「导演 0」），当前维度变空要自动切到有值的维度"""
+        html = build_page()
+        for fragment in (
+                "if (!counts[d.key].length) continue;",
+                'const fallback = DIMS.find(d => counts[d.key].length)',
+                'if (!dims.children.length) { chipsEl.innerHTML = ""; return; }'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, html)
+
     def test_empty_library_does_not_break_chips(self):
         """判别性：全部维度都为空（空库）时 DIMS 为空数组，
         buildChips 会找不到 activeDim 而崩——必须按 DIMS 是否为空

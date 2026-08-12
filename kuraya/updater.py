@@ -42,6 +42,8 @@ DOWNLOAD_TIMEOUT = (10, 60)  # 安装包下载放宽
 ERROR_LINES = 6           # brew 失败时透出的输出行数（够放下 Error 与解法）
 DOWNLOAD_TRIES = 3        # 含首次；网络抖动重试
 RETRY_BACKOFF = (1, 3)    # 每次重试前的等待秒数，用尽后按最后一个值等
+PENDING_STUCK = 31 * 60   # 延迟脚本等退出的时限是 30 分钟，超过仍未
+                          # 落定即视为脚本已死（被杀/卡死），按失败重排
 
 _shown = False  # 同一进程只在主流程开头提示一次
 
@@ -180,15 +182,21 @@ def pending_notice():
     tmp = log.parent
     target = Path(sys.executable).parent
     exe_name = 'Kuraya.exe' if sys.platform == 'win32' else 'Kuraya'
-    if content.startswith('PENDING'):
-        return tr('更新尚未完成：请退出本程序，'
-                  '稍候几秒后再打开，更新会自动完成')
+    if content.startswith(('PENDING', 'STARTED')):
+        # 脚本等进程退出的时限是 30 分钟，正常应在用户退出后约 1 分钟内
+        # 完成；停留超过时限还不变（如脚本被安全软件杀掉）说明没有脚本
+        # 在跑，提示「请退出」只会让用户永远等下去——按 FAIL 重排
+        age = time.time() - log.stat().st_mtime
+        if age < PENDING_STUCK:
+            return tr('更新尚未完成：请退出本程序，'
+                      '等待约 10 秒后再打开，更新会自动完成')
+        content = 'FAIL: deferred replace script was killed or stuck'
     if content.startswith('FAIL'):
         reason = content.removeprefix('FAIL:').strip() or content
         new = tmp / 'x' / 'Kuraya'
         if (new / exe_name).is_file() and _replace_later(new, target):
             return tr('上次更新未完成：{reason}。已重新安排，请退出本程序，'
-                      '稍候几秒后再打开，更新会自动完成', reason=reason)
+                      '等待约 10 秒后再打开，更新会自动完成', reason=reason)
         return (tr('上次更新未完成：{reason}', reason=reason)
                 + tr('（可到下载页手动下载解压：{url}）',
                      url=RELEASES_URL))
@@ -303,7 +311,7 @@ def update(yes=False, quiet=False):
                         later_msg = tr('程序目录正被占用，'
                                        '已安排程序退出后自动完成更新')
                         print(f'  {C.GOLD}◈{C.RESET} {later_msg}')
-                        close_msg = tr('请退出本程序，稍候几秒后再打开，'
+                        close_msg = tr('请退出本程序，等待约 10 秒后再打开，'
                                        '更新会自动完成')
                         print(f'  {C.GREY}{close_msg}{C.RESET}')
                         if _installer_installed(target):
@@ -598,6 +606,9 @@ $target = '{ps_str(target)}'
 $new = '{ps_str(new_dir)}'
 $old = "$target.old"
 $exe = '{ps_str(target / exe_name)}'
+# 启动即写 STARTED：与 PENDING（脚本没跑起来）区分开——
+# 脚本被安全软件杀掉时停在 STARTED，诊断时能看出脚本确实执行过
+Set-Content -LiteralPath $log -Value 'STARTED' -Encoding UTF8
 # 阶段 1：等程序退出。运行中的 exe 锁着目录，重命名必被拒。
 # 提示用户退出后即通过；最长等 30 分钟（用户可能正在用，不急于退），
 # 超时按失败处理并留日志。

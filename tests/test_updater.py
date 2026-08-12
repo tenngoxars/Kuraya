@@ -338,6 +338,29 @@ class PendingNotice(unittest.TestCase):
         self.replace_mock.assert_not_called()
         self.assertIn('尚未完成', notice)
 
+    def test_stale_pending_treated_as_dead(self):
+        """PENDING 停留超过脚本时限（31 分钟）仍不落定：脚本已被杀或卡死，
+        提示「请退出」只会让用户永远等下去，按失败重新安排"""
+        d = self._log('kuraya-update-stale', 'PENDING')
+        (d / 'x' / 'Kuraya').mkdir(parents=True)
+        (d / 'x' / 'Kuraya' / 'Kuraya.exe').write_bytes(b'')
+        import os as _os
+        old = time.time() - updater.PENDING_STUCK - 60
+        _os.utime(d / 'update.log', (old, old))
+        with self.patch():
+            notice = updater.pending_notice()
+        self.replace_mock.assert_called_once()
+        self.assertIn('已重新安排', notice)
+
+    def test_started_treated_as_running(self):
+        """STARTED 说明脚本确实执行过（区别于 PENDING 的没跑起来），
+        新鲜时同样提示退出等待，不重复安排"""
+        self._log('kuraya-update-start', 'STARTED')
+        with self.patch():
+            notice = updater.pending_notice()
+        self.replace_mock.assert_not_called()
+        self.assertIn('尚未完成', notice)
+
     def test_ok_leftover_cleaned(self):
         """OK 残留（脚本自清失败）不提示，顺手清掉"""
         d = self._log('kuraya-update-d', 'OK')

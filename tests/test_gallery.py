@@ -340,7 +340,8 @@ class Packing(unittest.TestCase):
             f'<num>ROE-490</num><label>{series}</label>'
             f'<set>{series}</set><studio>マドンナ</studio>'
             f'<premiered>2025-01-01</premiered><poster>p.jpg</poster>')
-        self.assertEqual(row[self.col('label')], 'マドンナ')
+        # 回退拿到的片假名统一为罗马字，与正常数据的写法一致
+        self.assertEqual(row[self.col('label')], 'Madonna')
 
     def test_label_kept_when_set_differs(self):
         """发行商与系列不同值是正常数据（如 JUQ-162），不能被回退误伤"""
@@ -350,6 +351,106 @@ class Packing(unittest.TestCase):
             '<studio>マドンナ</studio><premiered>2025-01-01</premiered>'
             '<poster>p.jpg</poster>')
         self.assertEqual(row[self.col('label')], 'MONROE')
+
+    def test_katakana_label_romanized(self):
+        """同一家厂牌两种写法（マドンナ/Madonna）统一为罗马字，
+        否则筛选维度出现两个值"""
+        row = self._lib_nfo(
+            '<num>JUQ-162</num><label>マドンナ</label>'
+            '<set>人妻秘書</set><studio>マドンナ</studio>'
+            '<premiered>2025-01-01</premiered><poster>p.jpg</poster>')
+        self.assertEqual(row[self.col('label')], 'Madonna')
+
+    def test_unmapped_katakana_kept(self):
+        """映射表外的片假名厂商保持原样，宁缺毋滥"""
+        row = self._lib_nfo(
+            '<num>ABC-001</num><label>ひかりTV</label>'
+            '<set>シリーズX</set><studio>ひかりTV</studio>'
+            '<premiered>2025-01-01</premiered><poster>p.jpg</poster>')
+        self.assertEqual(row[self.col('label')], 'ひかりTV')
+
+    def _lib_multi(self, entries):
+        """多条目库：entries = [(目录名, nfo body)]，返回 pack 后的行"""
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        for i, (dirname, body) in enumerate(entries):
+            d = tmp / f'演员{i}' / dirname
+            d.mkdir(parents=True)
+            (d / f'{dirname}.nfo').write_text(
+                f'<?xml version="1.0" encoding="UTF-8" ?><movie>'
+                f'{body}</movie>', encoding='utf-8')
+            (d / 'p.jpg').write_bytes(b'')
+            (d / f'{dirname}.mp4').write_bytes(b'')
+        return gallery.pack(gallery.collect(str(tmp)))
+
+    def test_learned_map_romanizes_fallback(self):
+        """库内多数投票：3 部本家片（マドンナ/Madonna）多于 1 部子品牌片
+        （マドンナ/MONROE）时学到映射，串位回退的片也统一为 Madonna"""
+        rows = self._lib_multi([
+            ('A-001', '<num>A-001</num><studio>マドンナ</studio>'
+                      '<label>Madonna</label><premiered>2025-01-01</premiered>'),
+            ('A-002', '<num>A-002</num><studio>マドンナ</studio>'
+                      '<label>Madonna</label><premiered>2025-01-01</premiered>'),
+            ('A-003', '<num>A-003</num><studio>マドンナ</studio>'
+                      '<label>Madonna</label><premiered>2025-01-01</premiered>'),
+            ('A-004', '<num>A-004</num><studio>マドンナ</studio>'
+                      '<label>MONROE</label><premiered>2025-01-01</premiered>'),
+            ('A-005', '<num>A-005</num><label>シリーズX</label>'
+                      '<set>シリーズX</set><studio>マドンナ</studio>'
+                      '<premiered>2025-01-01</premiered>'),
+        ])
+        got = {r[self.col('code')]: r[self.col('label')] for r in rows}
+        # 本家片与串位回退片统一为 Madonna；子品牌片 MONROE 是正常罗马字，原样保留
+        self.assertEqual(got, {'A-001': 'Madonna', 'A-002': 'Madonna',
+                               'A-003': 'Madonna', 'A-004': 'MONROE',
+                               'A-005': 'Madonna'})
+
+    def test_single_pair_not_learned(self):
+        """只出现一次的 (studio, label) 对可能是子品牌，不采纳；
+        串位回退的片保持片假名"""
+        rows = self._lib_multi([
+            ('B-001', '<num>B-001</num><studio>ABCスタジオ</studio>'
+                      '<label>ABC Studio</label><premiered>2025-01-01</premiered>'),
+            ('B-002', '<num>B-002</num><label>シリーズX</label>'
+                      '<set>シリーズX</set><studio>ABCスタジオ</studio>'
+                      '<premiered>2025-01-01</premiered>'),
+        ])
+        row = next(r for r in rows if r[self.col('code')] == 'B-002')
+        self.assertEqual(row[self.col('label')], 'ABCスタジオ')
+
+    def test_crossed_nfo_not_learning_evidence(self):
+        """串位 nfo 的 label 是系列名，不可信：同系列多部串位片
+        也不能把片假名错学成系列名"""
+        rows = self._lib_multi([
+            ('C-001', '<num>C-001</num><label>シリーズX</label>'
+                      '<set>シリーズX</set><studio>ABCスタジオ</studio>'
+                      '<premiered>2025-01-01</premiered>'),
+            ('C-002', '<num>C-002</num><label>シリーズX</label>'
+                      '<set>シリーズX</set><studio>ABCスタジオ</studio>'
+                      '<premiered>2025-01-01</premiered>'),
+            ('C-003', '<num>C-003</num><label>シリーズX</label>'
+                      '<set>シリーズX</set><studio>ABCスタジオ</studio>'
+                      '<premiered>2025-01-01</premiered>'),
+        ])
+        for r in rows:
+            self.assertEqual(r[self.col('label')], 'ABCスタジオ')
+
+    def test_builtin_table_wins_over_learning(self):
+        """库里子品牌片多到投票偏向 MONROE 时，内置表的高置信
+        映射（マドンナ→Madonna）仍然优先"""
+        rows = self._lib_multi([
+            ('D-001', '<num>D-001</num><studio>マドンナ</studio>'
+                      '<label>MONROE</label><premiered>2025-01-01</premiered>'),
+            ('D-002', '<num>D-002</num><studio>マドンナ</studio>'
+                      '<label>MONROE</label><premiered>2025-01-01</premiered>'),
+            ('D-003', '<num>D-003</num><studio>マドンナ</studio>'
+                      '<label>MONROE</label><premiered>2025-01-01</premiered>'),
+            ('D-004', '<num>D-004</num><label>シリーズX</label>'
+                      '<set>シリーズX</set><studio>マドンナ</studio>'
+                      '<premiered>2025-01-01</premiered>'),
+        ])
+        row = next(r for r in rows if r[self.col('code')] == 'D-004')
+        self.assertEqual(row[self.col('label')], 'Madonna')
 
     def test_actors_omitted_when_same_as_folder(self):
         row = self.lib('ABC-001', 'ABC-001', ['演员甲'])

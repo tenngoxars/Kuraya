@@ -45,6 +45,88 @@ except ImportError:
 # 非演员目录，扫描时跳过
 SKIP = {"待整理", "Kuraya", "kuraya"}
 
+# 常见厂商的片假名→罗马字写法：同一家厂牌两种写法时统一为罗马字，
+# 否则片库页面出现「マドンナ / Madonna」两张皮，筛选也分成两个值。
+# 未命中的厂商保持原样，表按需扩充。
+STUDIO_ROMAN = {
+    'マドンナ': 'Madonna',
+    'エスワン ナンバーワンスタイル': 'S1 NO.1 STYLE',
+    'エスワン': 'S1 NO.1 STYLE',
+    'ムーディーズ': 'MOODYZ',
+    'アイデアポケット': 'IDEA POCKET',
+    'プレステージ': 'PRESTIGE',
+    'アタッカーズ': 'ATTACKERS',
+    'ダスッ！': 'DAS!',
+    'ソフト・オン・デマンド': 'SOD',
+    'マックスエー': 'MAX-A',
+    'ケイ・エム・プロデュース': 'K.M.Produce',
+}
+
+
+def _find_nfo(cdir, code):
+    """定位条目目录里的 nfo：同名优先，兜底匹配——目录名或 nfo 文件名
+    一方带后缀（-CD1/-4k/4K 特別版等下载常态），只要一方是另一方的前缀
+    即可配对"""
+    nfo_path = os.path.join(cdir, f"{code}.nfo")
+    if not os.path.isfile(nfo_path):
+        code_upper = code.upper()
+        cand = [f for f in os.listdir(cdir)
+                if f.lower().endswith(".nfo")
+                and (f.upper().startswith(code_upper)
+                     or code_upper.startswith(
+                         os.path.splitext(f)[0].upper()))]
+        cand.sort(key=lambda f: ("cd1" not in f.lower(), f))
+        nfo_path = os.path.join(cdir, cand[0]) if cand else None
+    return nfo_path if nfo_path and os.path.isfile(nfo_path) else None
+
+
+def _learn_studio_roman(base):
+    """从库内 nfo 学习片假名→罗马字映射，兜底内置表的覆盖不全。
+
+    同一条 nfo 的 studio（製作商，多为片假名）与 label（發行商，多为
+    罗马字）对本家片成对出现；子品牌片（如 Madonna 旗下 MONROE）也会
+    成对，但出现次数少于本家，多数投票即可排除。只出现一次的成对不可
+    靠（可能恰是子品牌），不采纳。返回 {片假名: 罗马字}。
+    """
+    votes = {}
+    for actress in sorted(os.listdir(base)):
+        if actress in SKIP:
+            continue
+        adir = os.path.join(base, actress)
+        if not os.path.isdir(adir):
+            continue
+        for code in sorted(os.listdir(adir)):
+            cdir = os.path.join(adir, code)
+            if not os.path.isdir(cdir):
+                continue
+            nfo_path = _find_nfo(cdir, code)
+            if not nfo_path:
+                continue
+            try:
+                root = ET.parse(nfo_path).getroot()
+            except Exception:
+                continue
+            studio = root.findtext("studio")
+            label = root.findtext("label")
+            set_name = root.findtext("set")
+            studio = studio.strip() if studio else ""
+            label = label.strip() if label else ""
+            set_name = set_name.strip() if set_name else ""
+            # 串位 nfo（旧引擎把系列名写进 label）的 label 不可信：
+            # 同系列多部串位片会把片假名错学成系列名，不能作为证据
+            if (studio and label and label != set_name
+                    and studio != label):
+                votes.setdefault(studio, {}).setdefault(label, 0)
+                votes[studio][label] += 1
+    learned = {}
+    for studio, cands in votes.items():
+        total = sum(cands.values())
+        top_label, top_n = max(cands.items(), key=lambda kv: kv[1])
+        # 至少两条证据且明显占多数，避免子品牌喧宾夺主
+        if total >= 2 and top_n >= 2 and top_n * 2 > total:
+            learned[studio] = top_label
+    return learned
+
 
 def read_web(name):
     with open(os.path.join(WEB_DIR, name), encoding="utf-8") as fp:
@@ -54,6 +136,12 @@ def read_web(name):
 def collect(base):
     """扫描库目录收集影片数据，按番号去重并按发行日期新到旧排序"""
     base = os.path.abspath(base)
+    # 内置表优先，库内学习兜底长尾厂商
+    learned = _learn_studio_roman(base)
+
+    def roman(name):
+        return STUDIO_ROMAN.get(name, learned.get(name, name))
+
     items = []
 
     for actress in sorted(os.listdir(base)):
@@ -66,19 +154,8 @@ def collect(base):
             cdir = os.path.join(adir, code)
             if not os.path.isdir(cdir):
                 continue
-            nfo_path = os.path.join(cdir, f"{code}.nfo")
-            if not os.path.isfile(nfo_path):
-                # 兜底匹配：目录名或 nfo 文件名一方带后缀（-CD1/-4k/4K 特別版
-                # 等下载常态），只要一方是另一方的前缀即可配对
-                code_upper = code.upper()
-                cand = [f for f in os.listdir(cdir)
-                        if f.lower().endswith(".nfo")
-                        and (f.upper().startswith(code_upper)
-                             or code_upper.startswith(
-                                 os.path.splitext(f)[0].upper()))]
-                cand.sort(key=lambda f: ("cd1" not in f.lower(), f))
-                nfo_path = os.path.join(cdir, cand[0]) if cand else None
-            if not nfo_path or not os.path.isfile(nfo_path):
+            nfo_path = _find_nfo(cdir, code)
+            if not nfo_path:
                 continue
             try:
                 root = ET.parse(nfo_path).getroot()
@@ -95,6 +172,9 @@ def collect(base):
             # 发行商与系列同值说明数据串位，回退製作商
             if label and label == gt("set"):
                 label = gt("studio")
+            # 片假名厂商统一为罗马字（含串位回退拿到的 studio），
+            # 内置表优先，库内学习兜底
+            label = roman(label)
             director = gt("director")
             premiered = gt("premiered") or gt("year")
             runtime = gt("runtime")

@@ -361,6 +361,42 @@ class PendingNotice(unittest.TestCase):
         self.replace_mock.assert_not_called()
         self.assertIn('尚未完成', notice)
 
+    def test_stale_pending_cleaned_when_already_updated(self):
+        """目标版本不高于当前版本：用户已手动升级到位，
+        残留的 PENDING 是过期信号，直接清掉不再提示"""
+        d = self._log('kuraya-update-upgraded', 'PENDING')
+        (d / 'version').write_text('0.7.5', encoding='utf-8')
+        with mock.patch.object(updater, '__version__', '0.7.5'), \
+                mock.patch.object(updater.sys, 'platform', 'win32'), \
+                mock.patch.object(updater.tempfile, 'gettempdir',
+                                  return_value=str(self.tmp)), \
+                mock.patch.object(updater, 'FROZEN', True):
+            notice = updater.pending_notice()
+        self.assertEqual(notice, '')
+        self.assertFalse(d.exists())
+
+    def test_newer_pending_still_waits(self):
+        """目标版本仍高于当前：确有未完成的更新，提示退出等待"""
+        d = self._log('kuraya-update-pending2', 'PENDING')
+        (d / 'version').write_text('9.9.9', encoding='utf-8')
+        with self.patch():
+            notice = updater.pending_notice()
+        self.replace_mock.assert_not_called()
+        self.assertIn('尚未完成', notice)
+
+    def test_stale_fail_cleaned_when_already_updated(self):
+        """手动升级到位后，FAIL 残留同样不再误报"""
+        d = self._log('kuraya-update-fail2', 'FAIL: boom')
+        (d / 'version').write_text('0.7.4', encoding='utf-8')
+        with mock.patch.object(updater, '__version__', '0.7.5'), \
+                mock.patch.object(updater.sys, 'platform', 'win32'), \
+                mock.patch.object(updater.tempfile, 'gettempdir',
+                                  return_value=str(self.tmp)), \
+                mock.patch.object(updater, 'FROZEN', True):
+            notice = updater.pending_notice()
+        self.assertEqual(notice, '')
+        self.assertFalse(d.exists())
+
     def test_ok_leftover_cleaned(self):
         """OK 残留（脚本自清失败）不提示，顺手清掉"""
         d = self._log('kuraya-update-d', 'OK')

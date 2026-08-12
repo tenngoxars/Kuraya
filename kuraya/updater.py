@@ -182,6 +182,17 @@ def pending_notice():
     tmp = log.parent
     target = Path(sys.executable).parent
     exe_name = 'Kuraya.exe' if sys.platform == 'win32' else 'Kuraya'
+    # 残留的更新目标不高于当前版本：用户已手动升级到位（解压覆盖等），
+    # 残留的 PENDING/FAIL 都是过期信号，直接清掉不提示
+    pending_ver = ''
+    try:
+        pending_ver = (tmp / 'version').read_text(
+            encoding='utf-8').strip()
+    except OSError:
+        pass
+    if pending_ver and not is_newer(pending_ver, __version__):
+        shutil.rmtree(tmp, ignore_errors=True)
+        return ''
     if content.startswith(('PENDING', 'STARTED')):
         # 脚本等进程退出的时限是 30 分钟，正常应在用户退出后约 1 分钟内
         # 完成；停留超过时限还不变（如脚本被安全软件杀掉）说明没有脚本
@@ -301,7 +312,7 @@ def update(yes=False, quiet=False):
             # （资源管理器窗口停在目录里）。两者都属「占用」而非致命，
             # 安排独立进程在程序退出后替换。
             if sys.platform == 'win32' and winerror in (5, 32):
-                if _replace_later(new, target):
+                if _replace_later(new, target, version=remote):
                     if app_old is not None:
                         shutil.rmtree(app_target, ignore_errors=True)
                         app_old.rename(app_target)
@@ -583,7 +594,7 @@ def _download(version):
     return new, tmp
 
 
-def _replace_later(new_dir, target):
+def _replace_later(new_dir, target, version=None):
     """
     延迟替换：程序退出后由独立 PowerShell 脚本完成目录替换。
 
@@ -592,8 +603,17 @@ def _replace_later(new_dir, target):
     脚本分两阶段：先等程序退出（轮询进程消失），再重命名新目录就位；
     用户可能快速重开程序，所以重命名阶段也带重试与超时。
     返回是否已安排。临时目录保留给脚本使用，脚本完成后自行清理。
+    version 是下载的目标版本，写进临时目录供启动检查比对：
+    用户手动升级到同版或更新后，残留的 PENDING/FAIL 不再误报。
     """
     tmp = new_dir.parent.parent
+    if version:
+        ver_file = tmp / 'version'
+        try:
+            if not ver_file.exists():
+                ver_file.write_text(str(version), encoding='utf-8')
+        except OSError:
+            pass
     script = tmp / 'replace.ps1'
     exe_name = 'Kuraya.exe' if sys.platform == 'win32' else 'Kuraya'
 

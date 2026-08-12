@@ -5,20 +5,17 @@
 // app.js 顶层的定义；本文件顶层不要放会立即执行的 const（app.js 末尾
 // 的 buildChips() 调用先于本文件执行到，const 会落在 TDZ 抛错）
 
-// 所有维度的联动计数：一次过滤出子集，同时统计每个维度在子集内的
-// 值分布。维度自身筛选被排除（excludeKey），其余维度与搜索词生效——
-// 选演员后发行商/导演的数量随匹配的影片联动
-function allDimCounts(excludeKey) {
-  const maps = {};
-  DIMS.forEach(d => { maps[d.key] = new Map(); });
-  filteredList(excludeKey).forEach(it => {
-    for (const d of DIMS) {
-      d.of(it).forEach(v => maps[d.key].set(v, (maps[d.key].get(v) || 0) + 1));
-    }
-  });
+// 各维度的联动计数：每个维度基于「排除自身筛选」的子集分别统计——
+// 当前维度不自我过滤（选演员 A 后演员 chips 不受 A 影响），其他维度
+// 的计数包含当前已选值（选 A 后发行商/导演标签数量 = A 的匹配影片）
+function allDimCounts() {
   const out = {};
   for (const d of DIMS) {
-    out[d.key] = [...maps[d.key].entries()]
+    const maps = new Map();
+    filteredList(d.key).forEach(it => {
+      d.of(it).forEach(v => maps.set(v, (maps.get(v) || 0) + 1));
+    });
+    out[d.key] = [...maps.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ja"));
   }
   return out;
@@ -29,7 +26,7 @@ function buildChips() {
   const MORE_RESERVE = 118;
   // 空库（或全部维度无值）时没有可筛的东西，筛选行整体留空
   if (!DIMS.length) { chipsEl.innerHTML = ""; return; }
-  const counts = allDimCounts(activeDim);
+  const counts = allDimCounts();
   // 当前维度在子集下已无值（如选演员后该演员没有导演片）：
   // 自动切到第一个有值的维度，不让用户停在空维度
   if (!counts[activeDim].length) {

@@ -198,13 +198,15 @@ class TopBar(unittest.TestCase):
 
     def test_chip_counts_follow_active_filters(self):
         """判别性：选演员后发行商/导演的计数必须基于当前筛选子集，
-        不能还是全库静态值——维度自身筛选排除，其余维度与搜索生效"""
+        不能还是全库静态值——每个维度按「排除自身」的子集分别统计，
+        当前维度不自我过滤，其他维度包含当前已选值"""
         html = build_page()
         for fragment in (
                 'function filteredList(excludeKey)',
                 'if (dim.key === excludeKey) continue',
-                'function allDimCounts(excludeKey)',
-                'const counts = allDimCounts(activeDim)',
+                'function allDimCounts()',
+                'filteredList(d.key).forEach',
+                'const counts = allDimCounts()',
                 'counts[d.key].length',
                 'const entries = counts[dim.key]'):
             with self.subTest(fragment=fragment):

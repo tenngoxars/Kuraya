@@ -60,7 +60,38 @@ STUDIO_ROMAN = {
     'ソフト・オン・デマンド': 'SOD',
     'マックスエー': 'MAX-A',
     'ケイ・エム・プロデュース': 'K.M.Produce',
+    'エレガンス': 'ELEGANCE',
+    'ティッシュ': 'TISSUE',
+    'みんなのキカタン': 'MINNA NO KIKATAN',
+    'HHHグループ': 'HHH GROUP',
+    'アリスJAPAN': 'ALICE JAPAN',
+    'アキノリ': 'AKINORI',
+    'エムズビデオグループ': "M's VIDEO GROUP",
+    'グローリークエスト': 'GLORY QUEST',
+    'プラネットプラス': 'PLANET PLUS',
+    'ロイヤル': 'ROYAL',
 }
+
+# 罗马字值去空格（含全角）/大小写后的索引：同一家厂商带不带空格写法
+# 不一时（IDEA POCKET / IDEAPOCKET）统一为表里的标准写法
+_ROMAN_COMPACT = {
+    value.replace(' ', '').replace('\u3000', '').upper(): value
+    for value in STUDIO_ROMAN.values()
+}
+
+
+def _compact(name):
+    """罗马字厂商名的归一键：去空格（含全角）后统一大写"""
+    return name.replace(' ', '').replace('\u3000', '').upper()
+
+
+def _roman(name):
+    """厂商名统一为罗马字：先查片假名映射，再按去空格/大小写匹配
+    罗马字变体（IDEAPOCKET → IDEA POCKET）；均未命中保持原样"""
+    direct = STUDIO_ROMAN.get(name)
+    if direct:
+        return direct
+    return _ROMAN_COMPACT.get(_compact(name), name)
 
 
 def _find_nfo(cdir, code):
@@ -81,14 +112,19 @@ def _find_nfo(cdir, code):
 
 
 def _learn_studio_roman(base):
-    """从库内 nfo 学习片假名→罗马字映射，兜底内置表的覆盖不全。
+    """从库内 nfo 学习厂商名归一，兜底内置表的覆盖不全。返回
+    (片假名→罗马字映射, 罗马字空格变体→标准写法映射)。
 
     同一条 nfo 的 studio（製作商，多为片假名）与 label（發行商，多为
     罗马字）对本家片成对出现；子品牌片（如 Madonna 旗下 MONROE）也会
     成对，但出现次数少于本家，多数投票即可排除。只出现一次的成对不可
-    靠（可能恰是子品牌），不采纳。返回 {片假名: 罗马字}。
+    靠（可能恰是子品牌），不采纳。
+
+    罗马字变体：MOODYZ DIVA / MOODYZDIVA 这类带不带空格的写法，
+    只要库里两种都出现，就统一为出现最多（平局取带空格）的标准写法。
     """
     votes = {}
+    variants = {}   # 去空格大写 -> {原写法: 次数}
     for actress in sorted(os.listdir(base)):
         if actress in SKIP:
             continue
@@ -112,12 +148,22 @@ def _learn_studio_roman(base):
             studio = studio.strip() if studio else ""
             label = label.strip() if label else ""
             set_name = set_name.strip() if set_name else ""
+            crossed = bool(label) and label == set_name
             # 串位 nfo（旧引擎把系列名写进 label）的 label 不可信：
             # 同系列多部串位片会把片假名错学成系列名，不能作为证据
-            if (studio and label and label != set_name
+            if (studio and label and not crossed
                     and studio != label):
                 votes.setdefault(studio, {}).setdefault(label, 0)
                 votes[studio][label] += 1
+            # 罗马字厂商名（含拉丁字母）按去空格分组，收集写法变体。
+            # 串位只让 label 失去可信度，studio 始终参与收集
+            for name in (studio, label):
+                if not name or (name == label and crossed):
+                    continue
+                if any(c.isascii() and c.isalpha() for c in name):
+                    compact = _compact(name)
+                    variants.setdefault(compact, {}).setdefault(name, 0)
+                    variants[compact][name] += 1
     learned = {}
     for studio, cands in votes.items():
         total = sum(cands.values())
@@ -125,7 +171,18 @@ def _learn_studio_roman(base):
         # 至少两条证据且明显占多数，避免子品牌喧宾夺主
         if total >= 2 and top_n >= 2 and top_n * 2 > total:
             learned[studio] = top_label
-    return learned
+    variant_map = {}
+    for cands in variants.values():
+        if len(cands) < 2:
+            continue
+        # 标准写法：出现次数多者优先，平局取带空格、再取全大写
+        # （厂商正式名通常全大写，小写手写变体不该喧宾夺主）
+        standard = max(cands.items(), key=lambda kv: (
+            kv[1], ' ' in kv[0], kv[0].isupper()))[0]
+        for name in cands:
+            if name != standard:
+                variant_map[name] = standard
+    return learned, variant_map
 
 
 def read_web(name):
@@ -136,11 +193,14 @@ def read_web(name):
 def collect(base):
     """扫描库目录收集影片数据，按番号去重并按发行日期新到旧排序"""
     base = os.path.abspath(base)
-    # 内置表优先，库内学习兜底长尾厂商
-    learned = _learn_studio_roman(base)
+    # 内置表优先（含罗马字空格变体），库内学习兜底长尾厂商
+    learned, variant_map = _learn_studio_roman(base)
 
     def roman(name):
-        return STUDIO_ROMAN.get(name, learned.get(name, name))
+        direct = _roman(name)
+        if direct != name:
+            return direct
+        return _roman(learned.get(name, variant_map.get(name, name)))
 
     items = []
 

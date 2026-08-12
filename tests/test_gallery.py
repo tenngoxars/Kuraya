@@ -369,6 +369,104 @@ class Packing(unittest.TestCase):
             '<premiered>2025-01-01</premiered><poster>p.jpg</poster>')
         self.assertEqual(row[self.col('label')], 'ひかりTV')
 
+    def test_extended_katakana_mappings(self):
+        """长尾片商映射：用户库实际遇到的厂牌逐家覆盖"""
+        cases = {
+            'エレガンス': 'ELEGANCE',
+            'ティッシュ': 'TISSUE',
+            'みんなのキカタン': 'MINNA NO KIKATAN',
+            'HHHグループ': 'HHH GROUP',
+            'アリスJAPAN': 'ALICE JAPAN',
+            'アキノリ': 'AKINORI',
+            'エムズビデオグループ': "M's VIDEO GROUP",
+            'グローリークエスト': 'GLORY QUEST',
+            'プラネットプラス': 'PLANET PLUS',
+            'ロイヤル': 'ROYAL',
+        }
+        for katakana, expected in cases.items():
+            with self.subTest(studio=katakana):
+                row = self._lib_nfo(
+                    f'<num>X-001</num><label>シリーズX</label>'
+                    f'<set>シリーズX</set><studio>{katakana}</studio>'
+                    f'<premiered>2025-01-01</premiered><poster>p.jpg</poster>')
+                self.assertEqual(row[self.col('label')], expected)
+
+    def test_roman_space_variants_unified(self):
+        """罗马字写法带不带空格（IDEA POCKET / IDEAPOCKET）统一为表内标准"""
+        for variant in ('IDEAPOCKET', 'IDEA POCKET', 'idea pocket'):
+            with self.subTest(label=variant):
+                row = self._lib_nfo(
+                    f'<num>X-002</num><label>{variant}</label>'
+                    f'<set>シリーズX</set><studio>アイデアポケット</studio>'
+                    f'<premiered>2025-01-01</premiered><poster>p.jpg</poster>')
+                self.assertEqual(row[self.col('label')], 'IDEA POCKET')
+
+    def test_library_roman_variants_unified(self):
+        """库内两种写法都出现时（MOODYZ DIVA / MOODYZDIVA），
+        统一为出现多（平局取带空格）的标准写法——不依赖内置表"""
+        rows = self._lib_multi([
+            ('E-001', '<num>E-001</num><studio>ムーディーズ</studio>'
+                      '<label>MOODYZ DIVA</label>'
+                      '<premiered>2025-01-01</premiered>'),
+            ('E-002', '<num>E-002</num><studio>ムーディーズ</studio>'
+                      '<label>MOODYZ DIVA</label>'
+                      '<premiered>2025-01-01</premiered>'),
+            ('E-003', '<num>E-003</num><studio>ムーディーズ</studio>'
+                      '<label>MOODYZDIVA</label>'
+                      '<premiered>2025-01-01</premiered>'),
+        ])
+        labels = {r[self.col('label')] for r in rows}
+        self.assertEqual(labels, {'MOODYZ DIVA'})
+
+    def test_single_roman_variant_kept(self):
+        """库里只有一种写法时不猜测，保持原样"""
+        rows = self._lib_multi([
+            ('F-001', '<num>F-001</num><studio>プレステージ</studio>'
+                      '<label>PRESTIGE DIVA</label>'
+                      '<premiered>2025-01-01</premiered>'),
+        ])
+        self.assertEqual(rows[0][self.col('label')], 'PRESTIGE DIVA')
+
+    def test_fullwidth_space_variant_unified(self):
+        """全角空格（IDEA　POCKET）与半角（IDEA POCKET）同样统一"""
+        rows = self._lib_multi([
+            ('G-001', '<num>G-001</num><studio>アイデアポケット</studio>'
+                      '<label>IDEA POCKET</label>'
+                      '<premiered>2025-01-01</premiered>'),
+            ('G-002', '<num>G-002</num><studio>アイデアポケット</studio>'
+                      '<label>IDEA\u3000POCKET</label>'
+                      '<premiered>2025-01-01</premiered>'),
+        ])
+        labels = {r[self.col('label')] for r in rows}
+        self.assertEqual(labels, {'IDEA POCKET'})
+
+    def test_lowercase_variant_not_chosen_as_standard(self):
+        """小写手写变体不喧宾夺主：同次数时全大写带空格的写法胜出"""
+        rows = self._lib_multi([
+            ('H-001', '<num>H-001</num><studio>プレステージ</studio>'
+                      '<label>PRESTIGE DIVA</label>'
+                      '<premiered>2025-01-01</premiered>'),
+            ('H-002', '<num>H-002</num><studio>プレステージ</studio>'
+                      '<label>prestige diva</label>'
+                      '<premiered>2025-01-01</premiered>'),
+        ])
+        labels = {r[self.col('label')] for r in rows}
+        self.assertEqual(labels, {'PRESTIGE DIVA'})
+
+    def test_roman_studio_of_crossed_nfo_still_collected(self):
+        """串位 nfo 只让 label 失去可信度，罗马字 studio 仍参与变体收集"""
+        rows = self._lib_multi([
+            ('I-001', '<num>I-001</num><studio>MOODYZ DIVA</studio>'
+                      '<label>シリーズX</label><set>シリーズX</set>'
+                      '<premiered>2025-01-01</premiered>'),
+            ('I-002', '<num>I-002</num><studio>MOODYZDIVA</studio>'
+                      '<label>シリーズX</label><set>シリーズX</set>'
+                      '<premiered>2025-01-01</premiered>'),
+        ])
+        # 两片都串位：label 回退 studio 后，靠变体映射统一
+        labels = {r[self.col('label')] for r in rows}
+        self.assertEqual(labels, {'MOODYZ DIVA'})
+
     def _lib_multi(self, entries):
         """多条目库：entries = [(目录名, nfo body)]，返回 pack 后的行"""
         tmp = Path(tempfile.mkdtemp())

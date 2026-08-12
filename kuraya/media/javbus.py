@@ -26,15 +26,29 @@ HEADERS = {
 
 COOKIES = {'existmag': 'all'}
 
+
+def _linked(name: str) -> str:
+    """
+    「标签 name: 紧跟一个链接」这类字段的取值路径。
+
+    要求 <a> 的最近前驱标签就是 name 本身。写成 ../a 会取到父节点下的所有
+    链接：站点一旦把两个字段并进同一个 <p>（或漏掉 </p>），系列的值就被
+    发行商取走，而且取到的是非空值——只查空字段的自检永远发现不了。
+    """
+    return (f'//span[contains(text(),"{name}:")]/following-sibling::a'
+            f'[preceding-sibling::span[@class="header"][1][contains(text(),"{name}:")]]'
+            f'/text()')
+
+
 XPATH = {
     'number':   '//span[contains(text(),"識別碼:")]/../span[2]/text()',
     'title':    '//div[@class="container"]/h3/text()',
     'release':  '//span[contains(text(),"發行日期:")]/../text()',
     'runtime':  '//span[contains(text(),"長度:")]/../text()',
-    'studio':   '//span[contains(text(),"製作商:")]/../a/text()',
-    'label':    '//span[contains(text(),"發行商:")]/../a/text()',
-    'series':   '//span[contains(text(),"系列:")]/../a/text()',
-    'director': '//span[contains(text(),"導演:")]/../a/text()',
+    'studio':   _linked('製作商'),
+    'label':    _linked('發行商'),
+    'series':   _linked('系列'),
+    'director': _linked('導演'),
     'tags':     '//span[@class="genre"]/label/a/text()',
     'actors':   '//div[@id="avatar-waterfall"]/a/span/text()',
     'cover':    '//a[@class="bigImage"]/@href',
@@ -206,7 +220,11 @@ def selftest() -> int:
         if not movie.tags:
             missing.append('tags')
 
-        mark = '✕' if missing else '✓'
+        # 两个字段解析出同一个值，多半是取值路径越界抓到了邻居字段。
+        # 串位不缺字段，只查空查不出来，得单列一条
+        crossed = bool(movie.label) and movie.label == movie.series
+
+        mark = '✕' if missing or crossed else '✓'
         print(f'  {mark} {movie.number}  {movie.title[:32]}')
         actors = tr('、').join(movie.actors[:3])
         print(f'      {movie.release}  {movie.runtime}{tr("分")}  '
@@ -214,5 +232,8 @@ def selftest() -> int:
         print(f'      {movie.cover_url}')
         if missing:
             print(tr('      缺字段：{fields}', fields=tr('、').join(missing)))
+        if crossed:
+            print(tr('      发行商与系列同值，疑似字段串位：{value}', value=movie.label))
+        if missing or crossed:
             failed += 1
     return failed

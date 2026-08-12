@@ -233,7 +233,7 @@ def do_selftest():
     failed = javbus.selftest()
     print()
     if failed:
-        print(tr("  {failed} 个番号未能取全字段。", failed=failed))
+        print(tr("  {failed} 个番号解析异常。", failed=failed))
         print(tr("  若全部失败，多半是站点改版或网络不通；"))
         print(tr("  个别失败通常是该条目本身信息不全，可以忽略。"))
         return PARTIAL

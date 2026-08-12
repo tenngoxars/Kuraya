@@ -304,6 +304,53 @@ class Packing(unittest.TestCase):
         row = self.lib('DIR-XYZ', 'NUM-999', ['演员甲'])
         self.assertEqual(row[self.col('dir')], 'DIR-XYZ')
 
+    def test_dir_with_suffix_finds_plain_nfo(self):
+        """下载目录常带后缀（4K/中文字幕等），nfo 文件名是纯番号时
+        要能配对，否则整部片被跳过"""
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        d = tmp / '演员甲' / 'ROE-490 4K 特別版'
+        d.mkdir(parents=True)
+        (d / 'ROE-490.nfo').write_text(
+            '<?xml version="1.0" encoding="UTF-8" ?><movie><num>ROE-490</num>'
+            '<label>L</label><premiered>2025-01-01</premiered>'
+            '<poster>p.jpg</poster></movie>', encoding='utf-8')
+        (d / 'p.jpg').write_bytes(b'')
+        (d / 'ROE-490.mp4').write_bytes(b'')
+        row = gallery.pack(gallery.collect(str(tmp)))[0]
+        self.assertEqual(row[self.col('code')], 'ROE-490')
+        self.assertEqual(row[self.col('dir')], 'ROE-490 4K 特別版')
+
+    def _lib_nfo(self, body):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        d = tmp / '演员甲' / 'ROE-490'
+        d.mkdir(parents=True)
+        (d / 'ROE-490.nfo').write_text(
+            '<?xml version="1.0" encoding="UTF-8" ?><movie>'
+            f'{body}</movie>', encoding='utf-8')
+        (d / 'p.jpg').write_bytes(b'')
+        (d / 'ROE-490.mp4').write_bytes(b'')
+        return gallery.pack(gallery.collect(str(tmp)))[0]
+
+    def test_label_crossed_with_set_falls_back_to_studio(self):
+        """旧引擎曾把系列名写进发行商（label==set），读取时应回退製作商"""
+        series = '出張で泊まりに来た叔母と同居生活'
+        row = self._lib_nfo(
+            f'<num>ROE-490</num><label>{series}</label>'
+            f'<set>{series}</set><studio>マドンナ</studio>'
+            f'<premiered>2025-01-01</premiered><poster>p.jpg</poster>')
+        self.assertEqual(row[self.col('label')], 'マドンナ')
+
+    def test_label_kept_when_set_differs(self):
+        """发行商与系列不同值是正常数据（如 JUQ-162），不能被回退误伤"""
+        row = self._lib_nfo(
+            '<num>ROE-490</num><label>MONROE</label>'
+            '<set>出張で泊まりに来た叔母と同居生活</set>'
+            '<studio>マドンナ</studio><premiered>2025-01-01</premiered>'
+            '<poster>p.jpg</poster>')
+        self.assertEqual(row[self.col('label')], 'MONROE')
+
     def test_actors_omitted_when_same_as_folder(self):
         row = self.lib('ABC-001', 'ABC-001', ['演员甲'])
         self.assertEqual(row[self.col('actors')], '')

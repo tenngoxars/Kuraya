@@ -133,13 +133,68 @@ def show():
     if console.QUIET or not console.interactive():
         return
     # 上次延迟替换失败的话，用户正是在这一刻纳闷「怎么还是旧版本」
-    stale = _pending_failure()
+    stale = pending_notice()
     if stale:
         console.say(f'  {C.RED}✕{C.RESET} {stale}')
     notice = text()
     if notice:
         _shown = True
         console.say(notice)
+
+
+def pending_notice():
+    """
+    启动时检查延迟替换的遗留状态，返回提示文案（空串无事）。
+
+    必须在用户重开程序的这一刻运行：延迟替换失败后脚本已超时退出，
+    新版本还完整躺在临时目录里，只提示不安排的话替换永远不会发生，
+    用户退出重开还是旧版本。FAIL 且新版本完整时重新安排替换；
+    PENDING 说明脚本还在等程序退出（或用户重开又锁上了目录），
+    提示退出等待即可，不重复安排；OK 的残留顺手清掉。
+    多份日志只认最新一份：历史残留的新目录要么已被最新脚本接管，
+    要么本就不完整，对每份都重排会让多个脚本抢同一处替换。
+    """
+    if sys.platform != 'win32' or not FROZEN:
+        return ''
+    try:
+        logs = list(Path(tempfile.gettempdir())
+                    .glob('kuraya-update-*/update.log'))
+    except OSError:
+        return ''
+    entries = []
+    for log in logs:
+        try:
+            content = log.read_text(encoding='utf-8-sig',
+                                    errors='replace').strip()
+            entries.append((log.stat().st_mtime, log, content))
+        except OSError:
+            continue
+    if not entries:
+        return ''
+    entries.sort(key=lambda e: e[0])
+    # 历史残留直接清掉，只处理最新一份
+    for _, log, _ in entries[:-1]:
+        shutil.rmtree(log.parent, ignore_errors=True)
+
+    _, log, content = entries[-1]
+    tmp = log.parent
+    target = Path(sys.executable).parent
+    exe_name = 'Kuraya.exe' if sys.platform == 'win32' else 'Kuraya'
+    if content.startswith('PENDING'):
+        return tr('更新尚未完成：请退出本程序，'
+                  '稍候几秒后再打开，更新会自动完成')
+    if content.startswith('FAIL'):
+        reason = content.removeprefix('FAIL:').strip() or content
+        new = tmp / 'x' / 'Kuraya'
+        if (new / exe_name).is_file() and _replace_later(new, target):
+            return tr('上次更新未完成：{reason}。已重新安排，请退出本程序，'
+                      '稍候几秒后再打开，更新会自动完成', reason=reason)
+        return (tr('上次更新未完成：{reason}', reason=reason)
+                + tr('（可到下载页手动下载解压：{url}）',
+                     url=RELEASES_URL))
+    # OK 的残留（脚本自清失败）一并扫掉，免得下次误报
+    shutil.rmtree(tmp, ignore_errors=True)
+    return ''
 
 
 # ---------- 自更新 ----------
@@ -602,6 +657,13 @@ try {{
             creationflags=getattr(subprocess, 'DETACHED_PROCESS', 0))
         return True
     except OSError:
+        # 脚本没跑起来：PENDING 残留会让每次启动都误报「请退出程序」，
+        # 而根本没有脚本在执行。改写为 FAIL 让启动检查给出正确引导。
+        try:
+            log.write_text('FAIL: could not start the deferred replace script',
+                           encoding='utf-8')
+        except OSError:
+            pass
         return False
 
 

@@ -266,8 +266,8 @@ def settings_menu():
             # 语言菜单内按 Esc 返回即完成，不再追加「按回车返回菜单」
 
 
-def run():
-    """菜单主循环。返回退出码"""
+def run(pending=''):
+    """菜单主循环。返回退出码。pending 为延迟替换遗留提示，画在菜单头部"""
     console.enable_ansi()
 
     while True:
@@ -291,6 +291,14 @@ def run():
             settings_menu()
             continue
 
+        def header():
+            draw_header(library, source)
+            # 延迟替换的遗留提示：菜单进备用屏幕会清掉主屏，
+            # 启动时打印的内容在这里重画出来用户才看得到
+            if pending:
+                say()
+                say(f'  {C.RED}✕{C.RESET} {pending}')
+
         options = [
             ('1', tr("刮削入库"), tr("处理待整理目录并归入片库")),
             ('2', tr("重建页面"), tr("重新扫描片库并生成 index.html")),
@@ -299,7 +307,7 @@ def run():
             ('5', tr("更新"), tr("检查并安装新版本")),
             ('0', tr("退出"), ''),
         ]
-        choice = menu_loop(lambda: draw_header(library, source), options,
+        choice = menu_loop(header, options,
                            esc_label=tr('退出'))
 
         # Esc 与管道 EOF 视为退出（EOF 是脚本/双击场景的默认收尾）

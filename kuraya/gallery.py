@@ -68,9 +68,14 @@ def collect(base):
                 continue
             nfo_path = os.path.join(cdir, f"{code}.nfo")
             if not os.path.isfile(nfo_path):
-                # 多集(-CD1)或特殊后缀(-4k等)命名的nfo兜底匹配
+                # 兜底匹配：目录名或 nfo 文件名一方带后缀（-CD1/-4k/4K 特別版
+                # 等下载常态），只要一方是另一方的前缀即可配对
+                code_upper = code.upper()
                 cand = [f for f in os.listdir(cdir)
-                        if f.lower().endswith(".nfo") and f.upper().startswith(code.upper())]
+                        if f.lower().endswith(".nfo")
+                        and (f.upper().startswith(code_upper)
+                             or code_upper.startswith(
+                                 os.path.splitext(f)[0].upper()))]
                 cand.sort(key=lambda f: ("cd1" not in f.lower(), f))
                 nfo_path = os.path.join(cdir, cand[0]) if cand else None
             if not nfo_path or not os.path.isfile(nfo_path):
@@ -86,6 +91,10 @@ def collect(base):
 
             num = gt("num", code)
             label = gt("label")
+            # 旧引擎刮削（xpath 加字段边界前）会把系列名写进 label：
+            # 发行商与系列同值说明数据串位，回退製作商
+            if label and label == gt("set"):
+                label = gt("studio")
             director = gt("director")
             premiered = gt("premiered") or gt("year")
             runtime = gt("runtime")

@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import time
 import unittest
+from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
@@ -277,9 +278,101 @@ class Show(unittest.TestCase):
         with mock.patch.object(updater.sys, 'platform', 'win32'), \
                 mock.patch.object(updater.tempfile, 'gettempdir',
                                   return_value=str(tmp)), \
+                mock.patch.object(updater, 'FROZEN', True), \
                 mock.patch('kuraya.console.say') as say:
             updater.show()
         self.assertIn('Access to the path is denied', say.call_args[0][0])
+
+
+class PendingNotice(unittest.TestCase):
+    """启动恢复：延迟替换失败后重开程序，不能只提示——还要重新安排"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def patch(self):
+        """进入 win32 + FROZEN + 临时目录的 mock 栈；_replace_later 的
+        mock 挂在 self.replace_mock 上供断言"""
+        stack = ExitStack()
+        stack.enter_context(mock.patch.object(updater.sys, 'platform', 'win32'))
+        stack.enter_context(mock.patch.object(updater.tempfile, 'gettempdir',
+                                              return_value=str(self.tmp)))
+        stack.enter_context(mock.patch.object(updater, 'FROZEN', True))
+        self.replace_mock = stack.enter_context(
+            mock.patch.object(updater, '_replace_later', return_value=True))
+        return stack
+
+    def _log(self, name, content):
+        d = self.tmp / name
+        d.mkdir()
+        (d / 'update.log').write_text(content, encoding='utf-8')
+        return d
+
+    def test_fail_with_intact_new_dir_reschedules(self):
+        """FAIL 且新版本完整：脚本已超时退出，必须重新安排替换，
+        否则用户退出重开还是旧版本"""
+        d = self._log('kuraya-update-a', 'FAIL: Access denied')
+        (d / 'x' / 'Kuraya').mkdir(parents=True)
+        (d / 'x' / 'Kuraya' / 'Kuraya.exe').write_bytes(b'')
+        with self.patch():
+            notice = updater.pending_notice()
+        self.replace_mock.assert_called_once()
+        self.assertIn('已重新安排', notice)
+        self.assertIn('Access denied', notice)
+
+    def test_fail_without_new_dir_only_hints(self):
+        """FAIL 但新版本已不在（下载目录被清）：没法重排，给下载页引导"""
+        self._log('kuraya-update-b', 'FAIL: boom')
+        with self.patch():
+            notice = updater.pending_notice()
+        self.replace_mock.assert_not_called()
+        self.assertIn('boom', notice)
+
+    def test_pending_only_asks_to_exit(self):
+        """PENDING：脚本可能还在等程序退出（用户重开又锁上了目录），
+        提示退出等待即可，重复安排会两个脚本抢替换"""
+        self._log('kuraya-update-c', 'PENDING')
+        with self.patch():
+            notice = updater.pending_notice()
+        self.replace_mock.assert_not_called()
+        self.assertIn('尚未完成', notice)
+
+    def test_ok_leftover_cleaned(self):
+        """OK 残留（脚本自清失败）不提示，顺手清掉"""
+        d = self._log('kuraya-update-d', 'OK')
+        with self.patch():
+            notice = updater.pending_notice()
+        self.assertEqual(notice, '')
+        self.replace_mock.assert_not_called()
+        self.assertFalse(d.exists())
+
+    def test_old_fail_entries_cleaned_newest_rescheduled(self):
+        """多份残留只处理最新一份：对每份都重排会让多个脚本抢同一处替换，
+        旧目录的新版本要么已被接管要么不完整，直接清掉"""
+        old = self._log('kuraya-update-old', 'FAIL: old failure')
+        (old / 'x' / 'Kuraya').mkdir(parents=True)
+        (old / 'x' / 'Kuraya' / 'Kuraya.exe').write_bytes(b'')
+        newest = self._log('kuraya-update-new', 'FAIL: new failure')
+        (newest / 'x' / 'Kuraya').mkdir(parents=True)
+        (newest / 'x' / 'Kuraya' / 'Kuraya.exe').write_bytes(b'')
+        # 让 newest 的 mtime 确定性地晚于 old
+        future = old.stat().st_mtime + 60
+        import os as _os
+        _os.utime(newest / 'update.log', (future, future))
+        with self.patch():
+            notice = updater.pending_notice()
+        self.replace_mock.assert_called_once()
+        self.assertIn('new failure', notice)
+        self.assertNotIn('old failure', notice)
+        self.assertFalse(old.exists())
+
+    def test_non_windows_noop(self):
+        """非 Windows 平台没有延迟替换这回事"""
+        self._log('kuraya-update-e', 'FAIL: boom')
+        with mock.patch.object(updater.sys, 'platform', 'darwin'), \
+                mock.patch.object(updater, 'FROZEN', True):
+            self.assertEqual(updater.pending_notice(), '')
 
 
 if __name__ == '__main__':

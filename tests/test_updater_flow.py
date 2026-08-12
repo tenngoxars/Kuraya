@@ -199,6 +199,20 @@ class ReplaceLater(unittest.TestCase):
         self.assertNotIn('-WindowStyle', args)
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
 
+    def test_later_replace_popen_failure_marks_fail(self):
+        """脚本没启动（Popen 失败）时必须改写 FAIL：PENDING 残留会让
+        每次启动都提示「请退出程序」，而根本没有脚本在跑"""
+        tmp = Path(tempfile.mkdtemp())
+        new_dir = tmp / 'x' / 'Kuraya'
+        target = Path('/opt/Kuraya')
+        with mock.patch.object(updater.subprocess, 'Popen',
+                               side_effect=OSError('no powershell')):
+            ok = updater._replace_later(new_dir, target)
+        self.assertFalse(ok)
+        content = (tmp / 'update.log').read_text(encoding='utf-8-sig')
+        self.assertTrue(content.startswith('FAIL'))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+
     def test_update_falls_back_on_winerror32(self):
         """WinError 32（共享冲突，如资源管理器占用目录）同样走延迟替换"""
         new_dir = Path(tempfile.mkdtemp())

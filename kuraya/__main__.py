@@ -337,9 +337,11 @@ def main():
     # 菜单靠按键驱动，管道/定时任务里读到 EOF 立刻退出，
     # 于是一部片子没动却返回 0——比报错更糟，调用方无从察觉
     if not argv and console.interactive():
-        from . import menu
+        from . import menu, updater
         protocol.ensure_registered()
-        return menu.run()
+        # 延迟替换失败的提示不能等用户跑 update 才出现：
+        # 双击/菜单启动正是他纳闷「怎么还是旧版本」的时刻
+        return menu.run(pending=updater.pending_notice())
 
     args = build_parser().parse_args(argv)
 

@@ -397,6 +397,30 @@ class PendingNotice(unittest.TestCase):
         self.assertEqual(notice, '')
         self.assertFalse(d.exists())
 
+    def test_running_update_requests_auto_exit_once(self):
+        """PENDING 新鲜（更新进行中，用户重开锁住了目录）：请求自动退出
+        并写 marker；同残留再次检查时不再请求（防脚本被杀后死循环）"""
+        d = self._log('kuraya-update-run', 'PENDING')
+        with self.patch():
+            notice = updater.pending_notice()
+        self.assertTrue(updater.should_auto_exit())
+        self.assertTrue((d / 'autoexit').exists())
+        self.assertIn('尚未完成', notice)
+        # 第二次检查：marker 已存在，不再要求自动退出
+        with self.patch():
+            notice = updater.pending_notice()
+        self.assertFalse(updater.should_auto_exit())
+
+    def test_fail_never_auto_exits(self):
+        """FAIL 走重排/提示，不自动退出（重排的脚本还在，无需让位）"""
+        d = self._log('kuraya-update-fail3', 'FAIL: boom')
+        (d / 'x' / 'Kuraya').mkdir(parents=True)
+        (d / 'x' / 'Kuraya' / 'Kuraya.exe').write_bytes(b'')
+        with self.patch():
+            notice = updater.pending_notice()
+        self.assertFalse(updater.should_auto_exit())
+        self.assertIn('已重新安排', notice)
+
     def test_ok_leftover_cleaned(self):
         """OK 残留（脚本自清失败）不提示，顺手清掉"""
         d = self._log('kuraya-update-d', 'OK')

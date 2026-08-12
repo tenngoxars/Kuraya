@@ -159,6 +159,26 @@ class BareCommand(unittest.TestCase):
         menu_run.assert_called_once()
         cmd_all.assert_not_called()
 
+    def test_running_update_auto_exits_before_menu(self):
+        """更新进行中（用户重开锁住目录）：提示后程序自动退出，
+        不进菜单——退出后替换脚本才能完成并自动打开新版"""
+        with mock.patch.object(main.sys, 'argv', ['kuraya']), \
+                mock.patch('kuraya.console.interactive',
+                           return_value=True), \
+                mock.patch('kuraya.protocol.ensure_shell_app'), \
+                mock.patch('kuraya.protocol.ensure_registered'), \
+                mock.patch('kuraya.console.say'), \
+                mock.patch('kuraya.updater.pending_notice',
+                           return_value='更新尚未完成：请退出本程序'), \
+                mock.patch('kuraya.updater.should_auto_exit',
+                           return_value=True), \
+                mock.patch.object(main, 'time') as fake_time, \
+                mock.patch('kuraya.menu.run') as menu_run:
+            code = main.main()
+        self.assertEqual(code, 0)
+        menu_run.assert_not_called()
+        fake_time.sleep.assert_called_once_with(3)
+
 
 class DeleteRequest(unittest.TestCase):
     """协议删除成功后必须重建静态片库，失败不能误重建。"""

@@ -33,6 +33,7 @@ TABLE = {
     '程序目录正被占用，已安排程序退出后自动完成更新': 'The program folder is in use — the update will finish after the program exits',
     '请退出本程序，更新完成后会自动重新打开': 'Exit the program — it will reopen automatically once the update is done',
     '更新尚未完成：请退出本程序，更新完成后会自动重新打开': 'The update is not finished — exit the program, it will reopen automatically once done',
+    '程序将自动退出，更新完成后会自动重新打开': 'The program will exit on its own and reopen automatically once the update is done',
     '上次更新未完成：{reason}。已重新安排，请退出本程序，更新完成后会自动重新打开': 'The last update did not finish: {reason}. It has been rescheduled — exit the program, it will reopen automatically once done',
     '若重新打开后版本未变，请运行安装命令：irm https://kuraya.app/install.ps1 | iex': 'If the version is still old after reopening, run the installer: irm https://kuraya.app/install.ps1 | iex',
     '若重新打开后版本未变，可到下载页手动下载解压：{url}': 'If the version is still old after reopening, download and extract it manually from: {url}',

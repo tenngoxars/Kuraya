@@ -51,10 +51,21 @@ _shown = False  # 同一进程只在主流程开头提示一次
 # 否则脚本等不到进程退出，替换与自动重开永远不会发生
 _deferred = False
 
+# 启动检查发现更新进行中且本进程尚未为它自动退出过：
+# 用户重开（新进程又锁住目录）时程序自己退出，脚本才能完成替换
+_auto_exit = False
+
 
 def deferred_pending():
     """最近一次 update 是否安排了延迟替换（安排成功返回 True）"""
     return _deferred
+
+
+def should_auto_exit():
+    """启动检查是否要求本进程自动退出（更新进行中，退出让脚本接管）。
+    同一残留只自动退出一次（marker 记录），防止脚本被杀后每次重开
+    都自动退出形成死循环"""
+    return _auto_exit
 
 
 class UpdateError(Exception):
@@ -165,6 +176,8 @@ def pending_notice():
     多份日志只认最新一份：历史残留的新目录要么已被最新脚本接管，
     要么本就不完整，对每份都重排会让多个脚本抢同一处替换。
     """
+    global _auto_exit
+    _auto_exit = False
     if sys.platform != 'win32' or not FROZEN:
         return ''
     try:
@@ -208,6 +221,16 @@ def pending_notice():
         # 在跑，提示「请退出」只会让用户永远等下去——按 FAIL 重排
         age = time.time() - log.stat().st_mtime
         if age < PENDING_STUCK:
+            # 用户重开锁住了目录：本进程让位，程序自己退出后脚本才能
+            # 替换并自动打开新版。同一残留只让位一次（marker），
+            # 脚本被杀后不至于每次重开都自动退出
+            marker = tmp / 'autoexit'
+            try:
+                if not marker.exists():
+                    marker.write_text('1', encoding='utf-8')
+                    _auto_exit = True
+            except OSError:
+                pass
             return tr('更新尚未完成：请退出本程序，'
                       '更新完成后会自动重新打开')
         content = 'FAIL: deferred replace script was killed or stuck'

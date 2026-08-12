@@ -11,6 +11,7 @@ import runpy
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 from . import NAME, TAGLINE, KANJI, __version__, console, protocol, settings
@@ -338,10 +339,22 @@ def main():
     # 于是一部片子没动却返回 0——比报错更糟，调用方无从察觉
     if not argv and console.interactive():
         from . import menu, updater
+        from .launcher import C
         protocol.ensure_registered()
         # 延迟替换失败的提示不能等用户跑 update 才出现：
         # 双击/菜单启动正是他纳闷「怎么还是旧版本」的时刻
-        return menu.run(pending=updater.pending_notice())
+        stale = updater.pending_notice()
+        if stale:
+            console.say(f'  {C.RED}✕{C.RESET} {stale}')
+            # 更新进行中：用户重开又锁住了目录，程序自己退出让脚本
+            # 完成替换并自动打开新版，用户不用理解「请退出」
+            if updater.should_auto_exit():
+                console.say(f'  {C.GREY}'
+                            f'{tr("程序将自动退出，更新完成后会自动重新打开")}'
+                            f'{C.RESET}')
+                time.sleep(3)
+                return 0
+        return menu.run(pending=stale)
 
     args = build_parser().parse_args(argv)
 

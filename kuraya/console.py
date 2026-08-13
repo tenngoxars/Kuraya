@@ -43,10 +43,16 @@ def enable_ansi():
 
 
 def ensure_utf8():
-    """stdout/stderr 统一 UTF-8 输出（Windows 控制台默认 cp1252/gbk 会乱码）"""
+    """stdout/stderr 统一 UTF-8 输出并强制行缓冲。
+
+    Windows 控制台默认 cp1252/gbk 会乱码；打包后的 exe 若被当作
+    非交互进程会走块缓冲，刮削进度积压到结束时才一口气输出——
+    行缓冲保证每一行提示实时出现，逐步推进。
+    """
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding='utf-8', errors='replace')
+            stream.reconfigure(encoding='utf-8', errors='replace',
+                               line_buffering=True)
         except (AttributeError, ValueError):
             pass
 

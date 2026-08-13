@@ -52,5 +52,29 @@ class Interactive(unittest.TestCase):
         self.assertFalse(self.check(_Closed(), _Stream(True)))
 
 
+class EnsureUtf8(unittest.TestCase):
+    """统一 UTF-8 输出并强制行缓冲：打包后的 exe 可能被当非交互
+    进程走块缓冲，刮削进度会积压到结束才一口气输出"""
+
+    def test_reconfigure_with_line_buffering(self):
+        with mock.patch.object(console.sys, 'stdout') as out, \
+                mock.patch.object(console.sys, 'stderr') as err:
+            console.ensure_utf8()
+        out.reconfigure.assert_called_once_with(
+            encoding='utf-8', errors='replace', line_buffering=True)
+        err.reconfigure.assert_called_once_with(
+            encoding='utf-8', errors='replace', line_buffering=True)
+
+    def test_tolerates_closed_streams(self):
+        """流不可 reconfigure（关闭/无属性）时静默跳过，不打断启动"""
+        class Broken:
+            def reconfigure(self, **kw):
+                raise ValueError('closed')
+
+        with mock.patch.object(console.sys, 'stdout', Broken()), \
+                mock.patch.object(console.sys, 'stderr', Broken()):
+            console.ensure_utf8()   # 不应抛异常
+
+
 if __name__ == '__main__':
     unittest.main()

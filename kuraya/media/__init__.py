@@ -26,6 +26,64 @@ __all__ = ['process', 'scan', 'Settings']
 from ..formats import VIDEO_EXTS
 
 
+def _fmt_size(path):
+    """文件大小人类可读（GB/MB），读不到返回 ?"""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return '?'
+    for unit in ('B', 'KB', 'MB', 'GB'):
+        if size < 1024:
+            return f'{size:.0f} {unit}' if unit == 'B' else f'{size:.1f} {unit}'
+        size /= 1024
+    return f'{size:.2f} TB'
+
+
+def _confirm_replace(old_path, new_path):
+    """
+    洗版确认：显示新旧文件大小，方向键选择替换/跳过，回车确认。
+
+    用户明确说「不要自动」，非交互场景（管道/定时任务）无法确认，
+    宁可报错让用户手动处理，也不能悄悄替换文件。
+    """
+    # 延迟导入：引擎冷启动要快，console/keys/i18n 只在这个回调真正被
+    # 调用（交互洗版）时才加载
+    from .. import console
+    from ..console import C
+    from ..i18n import tr
+    from ..keys import read_key
+    if console.QUIET or not console.interactive():
+        return False
+    labels = (tr('替换'), tr('跳过'))
+    selected = 0
+
+    def render():
+        parts = [
+            f'{C.GOLD}▸{C.RESET} {C.BOLD}{label}{C.RESET}'
+            if i == selected else f'{C.GREY}·{C.RESET}  {label}{C.RESET}'
+            for i, label in enumerate(labels)
+        ]
+        print(f'\r  {"   ".join(parts)}\x1b[K', end='', flush=True)
+
+    print()
+    print(f'  {C.GOLD}◈{C.RESET} {tr("发现旧版本 {name}", name=old_path.name)}')
+    print(f'    {C.GREY}{tr("旧文件")}{C.RESET}  {_fmt_size(old_path)}')
+    print(f'    {C.GREY}{tr("新文件")}{C.RESET}  {_fmt_size(new_path)}')
+    print(f'  {C.GREY}{tr("用新文件替换（旧文件移入废纸篓）？")}{C.RESET}')
+    render()
+    while True:
+        key = read_key()
+        if key in ('left', 'right'):
+            selected = 1 - selected
+            render()
+        elif key == 'enter':
+            print()
+            return selected == 0
+        elif key in ('esc', 'eof'):
+            print()
+            return False
+
+
 def process(settings: Settings) -> Iterator[Event]:
     """
     处理待整理目录里的全部影片，逐步产出事件。
@@ -115,6 +173,7 @@ def _scrape(video, file_id, settings, started) -> Iterator[Event]:
     yield Probing(stage=Stage.ARCHIVE)
     archive.write_nfo(nfo.render(movie, file_id.edition, built),
                       folder, file_id.stem())
-    archive.store(video, folder, file_id.stem())
+    # 洗版确认：目标已存在同版本文件时询问是否替换（非交互自动拒绝）
+    archive.store(video, folder, file_id.stem(), confirm=_confirm_replace)
 
     yield Stored(path=folder, elapsed=time.time() - started)

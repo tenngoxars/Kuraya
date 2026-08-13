@@ -322,6 +322,10 @@ def build_parser():
 def main():
     argv = sys.argv[1:]
 
+    # 打包后的 exe 可能被当作非交互进程走块缓冲：显式 UTF-8 + 行缓冲，
+    # 否则刮削进度会积压到结束时才一口气输出，中文还可能乱码
+    console.ensure_utf8()
+
     # 内部调用与协议调用先于参数解析处理：前者格式固定，
     # 后者的 URL 可能含被 argparse 误认为选项的字符
     if argv and argv[0] in INTERNAL:

@@ -9,6 +9,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from kuraya.media import archive
 from kuraya.media.archive import ArchiveFailed
@@ -112,6 +113,130 @@ class StoreVideo(unittest.TestCase):
         with self.assertRaises(ArchiveFailed):
             archive.store(video, self.folder, 'XXX-000')
         self.assertTrue(video.exists(), '失败时源文件应留在原地')
+
+    def test_replace_after_confirm(self):
+        """确认洗版：旧文件移入废纸篓（mock 校验调用），新版就位"""
+        (self.folder / 'XXX-000.mp4').write_bytes(b'old')
+        video = self.make('XXX-000.mp4', b'new')
+        with mock.patch('kuraya.media.archive.move_to_trash',
+                        return_value=True) as trash:
+            target = archive.store(video, self.folder, 'XXX-000',
+                                   confirm=lambda old, new: True)
+        trash.assert_called_once_with(self.folder / 'XXX-000.mp4')
+        self.assertEqual(target.read_bytes(), b'new')
+
+    def test_declined_confirm_keeps_old(self):
+        """用户拒绝确认：报错，新旧文件都不动"""
+        (self.folder / 'XXX-000.mp4').write_bytes(b'old')
+        video = self.make('XXX-000.mp4', b'new')
+        with mock.patch('kuraya.media.archive.move_to_trash') as trash:
+            with self.assertRaises(ArchiveFailed):
+                archive.store(video, self.folder, 'XXX-000',
+                              confirm=lambda old, new: False)
+        trash.assert_not_called()
+        self.assertEqual((self.folder / 'XXX-000.mp4').read_bytes(), b'old')
+        self.assertTrue(video.exists())
+
+    def test_trash_failure_keeps_old(self):
+        """旧文件移废纸篓失败：报错，旧文件保留（不能删了新的又没就位）"""
+        (self.folder / 'XXX-000.mp4').write_bytes(b'old')
+        video = self.make('XXX-000.mp4', b'new')
+        with mock.patch('kuraya.media.archive.move_to_trash',
+                        return_value=False):
+            with self.assertRaises(ArchiveFailed):
+                archive.store(video, self.folder, 'XXX-000',
+                              confirm=lambda old, new: True)
+        self.assertEqual((self.folder / 'XXX-000.mp4').read_bytes(), b'old')
+        self.assertTrue(video.exists())
+
+
+class ConfirmReplace(unittest.TestCase):
+    """洗版确认：方向键选择替换/跳过，非交互/跳过都不动文件"""
+
+    def ask(self, keys, interactive=True, quiet=False):
+        from kuraya import media
+        with mock.patch('kuraya.console.interactive',
+                        return_value=interactive), \
+                mock.patch('kuraya.console.QUIET', quiet), \
+                mock.patch('kuraya.keys.read_key',
+                           side_effect=keys) as read:
+            result = media._confirm_replace(
+                Path('/tmp/旧文件.mp4'), Path('/tmp/新文件.mp4'))
+        return result, read
+
+    def test_enter_on_replace_confirms(self):
+        result, _ = self.ask(['enter'])
+        self.assertTrue(result)
+
+    def test_right_arrow_skips(self):
+        result, _ = self.ask(['right', 'enter'])
+        self.assertFalse(result)
+
+    def test_esc_skips(self):
+        result, _ = self.ask(['esc'])
+        self.assertFalse(result)
+
+    def test_eof_skips(self):
+        result, _ = self.ask(['eof'])
+        self.assertFalse(result)
+
+    def test_arrow_toggles_back(self):
+        """右→左回到替换，回车确认"""
+        result, _ = self.ask(['right', 'left', 'enter'])
+        self.assertTrue(result)
+
+    def test_non_interactive_skips_without_rendering(self):
+        from kuraya import media
+        with mock.patch('kuraya.console.interactive', return_value=False), \
+                mock.patch('kuraya.console.QUIET', False), \
+                mock.patch('kuraya.keys.read_key') as read, \
+                mock.patch('builtins.print') as printed:
+            self.assertFalse(media._confirm_replace(
+                Path('/tmp/旧.mp4'), Path('/tmp/新.mp4')))
+        read.assert_not_called()
+        printed.assert_not_called()
+
+    def test_quiet_mode_skips(self):
+        result, read = self.ask(['enter'], quiet=True)
+        self.assertFalse(result)
+        read.assert_not_called()
+
+    def test_prompt_shows_both_sizes(self):
+        """提示里要能看出新旧文件的大小对比"""
+        from kuraya import media
+        import io
+        from contextlib import redirect_stdout
+        with mock.patch('kuraya.console.interactive', return_value=True), \
+                mock.patch('kuraya.console.QUIET', False), \
+                mock.patch('kuraya.keys.read_key', side_effect=['enter']), \
+                mock.patch('kuraya.media._fmt_size',
+                           side_effect=lambda p: p.name):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                media._confirm_replace(Path('/旧.mp4'), Path('/新.mp4'))
+        out = buf.getvalue()
+        self.assertIn('旧.mp4', out)
+        self.assertIn('新.mp4', out)
+
+
+class FormatSize(unittest.TestCase):
+    def test_bytes(self):
+        from kuraya import media
+        with mock.patch.object(media.Path, 'stat') as stat:
+            stat.return_value.st_size = 512
+            self.assertEqual(media._fmt_size(Path('/x')), '512 B')
+
+    def test_gigabytes(self):
+        from kuraya import media
+        with mock.patch.object(media.Path, 'stat') as stat:
+            stat.return_value.st_size = int(1.5 * 1024 ** 3)
+            self.assertEqual(media._fmt_size(Path('/x')), '1.5 GB')
+
+    def test_unreadable(self):
+        from kuraya import media
+        with mock.patch.object(media.Path, 'stat',
+                               side_effect=OSError):
+            self.assertEqual(media._fmt_size(Path('/x')), '?')
 
 
 class Subtitles(unittest.TestCase):

@@ -7,6 +7,7 @@
 import shutil
 from pathlib import Path
 
+from ..trash import move_to_trash
 from .model import Movie
 
 SUBTITLE_EXTENSIONS = ('.srt', '.ass', '.ssa', '.sub', '.idx', '.vtt', '.smi', '.sup')
@@ -36,17 +37,24 @@ def write_nfo(text: str, folder: Path, stem: str) -> Path:
     return path
 
 
-def store(video: Path, folder: Path, stem: str) -> Path:
+def store(video: Path, folder: Path, stem: str, confirm=None) -> Path:
     """
     把影片搬进归档目录并改名，同名字幕一并搬走。
 
     放在最后一步：前面任何一步失败，影片都还在待整理目录里，重跑即可。
+    confirm 为洗版确认回调：目标已存在时调用（参数为旧文件与待入库
+    新文件路径），返回 True 则旧文件移入系统废纸篓（可恢复）再放新版；
+    返回 False 或未提供回调都报错，旧文件不动——洗版必须用户确认，
+    不自动删。
     """
     video = Path(video)
     target = folder / f'{stem}{video.suffix.lower()}'
 
     if target.exists():
-        raise ArchiveFailed(f'{target.name} 已存在于 {folder.name}')
+        if confirm is None or not confirm(target, video):
+            raise ArchiveFailed(f'{target.name} 已存在于 {folder.name}')
+        if not move_to_trash(target):
+            raise ArchiveFailed(f'旧文件 {target.name} 移入废纸篓失败，未替换')
 
     subtitles = list(_subtitles(video))
     _move(video, target)

@@ -70,6 +70,88 @@ class Layout(unittest.TestCase):
             archive.prepare(MOVIE, self.library)
 
 
+class MergeClippedFolder(unittest.TestCase):
+    """
+    取值路径修好之前，演员名取的是站点截短的显示名。同一位演员因此可能有
+    两个目录，建新目录时要把半截名那个并过来，不能把收藏劈成两半。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.library = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+
+    def movie(self, actor, number='XXX-000'):
+        return Movie(number=number, title='t', cover_url='', actors=(actor,))
+
+    def old_folder(self, name, number='OLD-001', filename='OLD-001.mp4'):
+        folder = self.library / name / number
+        folder.mkdir(parents=True)
+        (folder / filename).write_bytes(b'x')
+        return folder
+
+    def test_clipped_folder_is_renamed(self):
+        """全名目录还不存在时整个改名，一次搬完"""
+        self.old_folder('明日花キラ')
+        archive.prepare(self.movie('明日花キララ'), self.library)
+        self.assertFalse((self.library / '明日花キラ').exists())
+        self.assertTrue((self.library / '明日花キララ' / 'OLD-001' / 'OLD-001.mp4').is_file())
+
+    def test_contents_move_into_existing_folder(self):
+        """两个目录都在时逐个番号搬过去，旧目录搬空后删掉"""
+        self.old_folder('明日花キラ')
+        (self.library / '明日花キララ' / 'NEW-002').mkdir(parents=True)
+        archive.prepare(self.movie('明日花キララ'), self.library)
+        self.assertFalse((self.library / '明日花キラ').exists())
+        full = self.library / '明日花キララ'
+        self.assertTrue((full / 'OLD-001' / 'OLD-001.mp4').is_file())
+        self.assertTrue((full / 'NEW-002').is_dir())
+
+    def test_same_number_on_both_sides_is_left_alone(self):
+        """合并只做加法：两边都有的番号留在原地，不覆盖也不删"""
+        self.old_folder('明日花キラ')
+        kept = self.library / '明日花キララ' / 'OLD-001'
+        kept.mkdir(parents=True)
+        (kept / 'OLD-001.mkv').write_bytes(b'y')
+        archive.prepare(self.movie('明日花キララ'), self.library)
+        self.assertTrue((self.library / '明日花キラ' / 'OLD-001' / 'OLD-001.mp4').is_file())
+        self.assertTrue((kept / 'OLD-001.mkv').is_file())
+
+    def test_unrelated_actor_is_not_touched(self):
+        """名字不是前缀就不是同一个人"""
+        self.old_folder('三上悠亜')
+        archive.prepare(self.movie('明日花キララ'), self.library)
+        self.assertTrue((self.library / '三上悠亜' / 'OLD-001').is_dir())
+
+    def test_short_name_is_not_a_clipped_name(self):
+        """「葵」与「葵つかさ」是两位演员，一字名短到不可能是截断的结果"""
+        self.old_folder('葵')
+        archive.prepare(self.movie('葵つかさ'), self.library)
+        self.assertTrue((self.library / '葵' / 'OLD-001').is_dir())
+
+    def test_ascii_name_is_not_a_clipped_name(self):
+        """ASCII 名一字节一字符，从来没被截过，AIKA 不能并进 AIKAりん"""
+        self.old_folder('AIKA')
+        archive.prepare(self.movie('AIKAりん'), self.library)
+        self.assertTrue((self.library / 'AIKA' / 'OLD-001').is_dir())
+
+    def test_alias_notation_merges(self):
+        """站点给演员加了艺名记法，是同一个人，该合"""
+        self.old_folder('小島みなみ')
+        archive.prepare(self.movie('小島みなみ（旧名）'), self.library)
+        self.assertFalse((self.library / '小島みなみ').exists())
+        self.assertTrue(
+            (self.library / '小島みなみ（旧名）' / 'OLD-001').is_dir())
+
+    def test_merge_failure_does_not_fail_the_movie(self):
+        """合并搬不动也只是维持现状，不能让本来能入库的影片失败"""
+        self.old_folder('明日花キラ')
+        with mock.patch.object(Path, 'rename', side_effect=OSError('locked')):
+            folder = archive.prepare(self.movie('明日花キララ'), self.library)
+        self.assertTrue(folder.is_dir())
+        self.assertTrue((self.library / '明日花キラ' / 'OLD-001').is_dir())
+
+
 class StoreVideo(unittest.TestCase):
 
     def setUp(self):

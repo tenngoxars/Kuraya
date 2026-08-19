@@ -17,14 +17,65 @@ class ArchiveFailed(Exception):
     """目录建不了、目标已存在、文件移不动"""
 
 
+# 站点在头像墙上给的是显示名，比全名短一截（见 media/javbus.py 的 _actors）。
+# 截出来的名字都落在 12-15 字节，也就是 4-5 个中日文字符。
+# 下限一样要卡：不卡的话，「葵」这种真实的一字名会被并进「葵つかさ」，
+# 两位不同的演员就此混成一个目录。ASCII 名一字节一字符，从来没被截过，另行排除。
+_CLIPPED_BYTES = range(12, 16)
+
+
 def prepare(movie: Movie, library: Path) -> Path:
     """建好这部影片的归档目录并返回，已存在则直接用"""
-    folder = Path(library) / movie.folder_actor / movie.number
+    actor = Path(library) / movie.folder_actor
+    _merge_clipped(actor)
+    folder = actor / movie.number
     try:
         folder.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise ArchiveFailed(f'无法建立目录 {folder}：{exc}') from exc
     return folder
+
+
+def _merge_clipped(actor: Path) -> None:
+    """
+    把半截名目录并进全名目录。
+
+    取值路径修好之前，演员名取的是站点截短的显示名，那时入库的影片留在
+    半截名目录里；此后同一位演员的新片会建全名目录，收藏就此劈成两半。
+    建目录前先并过来，不必让用户自己发现、自己搬。
+
+    只认截断的确切形状：旧目录名是新名字的严格前缀，长度落在显示名被截断后的
+    区间内，且不是纯 ASCII。合法的五字名也可能落进这个形状（「小島みなみ」是
+    「小島みなみ（旧名）」的前缀），但那是同一个人加了艺名记法，本就该合。
+
+    只做加法：番号目录整个搬，两边都有的留在原地不动，空了才删旧目录。
+    判错了文件也还在，用户自己搬得回去。出错一律忽略 —— 合并失败顶多是
+    维持现状，不该让一部本来能入库的影片失败。
+    """
+    if not actor.parent.is_dir():
+        return
+    try:
+        siblings = list(actor.parent.iterdir())
+    except OSError:
+        return
+
+    for old in siblings:
+        if old.name == actor.name or not actor.name.startswith(old.name):
+            continue
+        if old.name.isascii() or not old.is_dir():
+            continue
+        if len(old.name.encode('utf-8')) not in _CLIPPED_BYTES:
+            continue
+        try:
+            if not actor.exists():
+                old.rename(actor)
+                continue
+            for item in old.iterdir():
+                if not (actor / item.name).exists():
+                    item.rename(actor / item.name)
+            old.rmdir()                      # 还剩东西就留着，rmdir 自己会拒绝
+        except OSError:
+            pass
 
 
 def write_nfo(text: str, folder: Path, stem: str) -> Path:

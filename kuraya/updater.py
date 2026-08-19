@@ -6,8 +6,12 @@
 设计约束：
 - 检查 24 小时最多请求一次，其余时间复用上次结果（GitHub 未认证 API 限流 60 次/小时）；
 - 网络失败、解析失败一律静默并缓存，绝不让检查拖慢或打断主流程；
-- 替换顺序：旧目录改名 .old → 新目录就位 → 删除旧目录，中途失败恢复旧目录。
-  Windows 上运行中的 exe 占着旧目录删不掉，残留的 .old 留待下次更新清理；
+- 替换分两种形态。mac / Linux 整目录换：旧目录改名 .old → 新目录就位 → 删旧。
+  Windows 换不了目录 —— 系统不许重命名含有已打开文件的目录，而 exe 与 _internal
+  下的 dll 正被本进程加载；但它允许重命名运行中的 exe 与已加载的 dll 本身，
+  于是改用逐个文件替换（见 _replace_in_place）。两种形态都是要么全成、
+  要么现有安装分毫未动；
+- 让位的旧文件本进程删不掉（还加载着），改名留到下次启动由 sweep_old() 清；
 - brew 安装由 brew 管理不自行替换，提示用 brew upgrade。
 """
 import os
@@ -42,30 +46,39 @@ DOWNLOAD_TIMEOUT = (10, 60)  # 安装包下载放宽
 ERROR_LINES = 6           # brew 失败时透出的输出行数（够放下 Error 与解法）
 DOWNLOAD_TRIES = 3        # 含首次；网络抖动重试
 RETRY_BACKOFF = (1, 3)    # 每次重试前的等待秒数，用尽后按最后一个值等
-PENDING_STUCK = 31 * 60   # 延迟脚本等退出的时限是 30 分钟，超过仍未
-                          # 落定即视为脚本已死（被杀/卡死），按失败重排
+# 就地替换时给旧文件加的后缀。运行中的进程删不掉自己加载的文件，
+# 只能先改名，留到下次启动时删 —— 那时谁也没加载它们
+OLD_SUFFIX = '.kuraya-old'
 
 _shown = False  # 同一进程只在主流程开头提示一次
 
-# 最近一次 update 是否安排了延迟替换：菜单据此退出进程让脚本执行，
-# 否则脚本等不到进程退出，替换与自动重开永远不会发生
-_deferred = False
-
-# 启动检查发现更新进行中且本进程尚未为它自动退出过：
-# 用户重开（新进程又锁住目录）时程序自己退出，脚本才能完成替换
-_auto_exit = False
+# 本进程是否已经把程序文件换成了新版：磁盘上是新版，内存里跑的还是旧版，
+# 菜单据此重开新版再退出
+_restart_needed = False
 
 
-def deferred_pending():
-    """最近一次 update 是否安排了延迟替换（安排成功返回 True）"""
-    return _deferred
+def restart_needed():
+    """本次运行是否已换过程序文件（换过就得重启才生效）"""
+    return _restart_needed
 
 
-def should_auto_exit():
-    """启动检查是否要求本进程自动退出（更新进行中，退出让脚本接管）。
-    同一残留只自动退出一次（marker 记录），防止脚本被杀后每次重开
-    都自动退出形成死循环"""
-    return _auto_exit
+def relaunch():
+    """
+    重开新版，成功返回 True（调用方随即退出本进程）。
+
+    只在 Windows 上做：那里的程序多是双击启动，CREATE_NEW_CONSOLE 能给新进程
+    一个自己的窗口，用户看得见。其余平台从终端或壳 app 启动，脱离会话重开只会
+    得到一个看不见的进程，不如老实提示用户自己重启。
+    """
+    if sys.platform != 'win32' or not FROZEN:
+        return False
+    try:
+        subprocess.Popen([sys.executable],
+                         creationflags=getattr(subprocess,
+                                               'CREATE_NEW_CONSOLE', 0))
+        return True
+    except OSError:
+        return False
 
 
 class UpdateError(Exception):
@@ -154,99 +167,35 @@ def show():
     # 平白给定时任务和脚本调用添一次网络等待
     if console.QUIET or not console.interactive():
         return
-    # 上次延迟替换失败的话，用户正是在这一刻纳闷「怎么还是旧版本」
-    stale = pending_notice()
-    if stale:
-        console.say(f'  {C.RED}✕{C.RESET} {stale}')
     notice = text()
     if notice:
         _shown = True
         console.say(notice)
 
 
-def pending_notice():
+def sweep_old(target=None):
     """
-    启动时检查延迟替换的遗留状态，返回提示文案（空串无事）。
+    清掉上次就地替换留下的旧文件。
 
-    必须在用户重开程序的这一刻运行：延迟替换失败后脚本已超时退出，
-    新版本还完整躺在临时目录里，只提示不安排的话替换永远不会发生，
-    用户退出重开还是旧版本。FAIL 且新版本完整时重新安排替换；
-    PENDING 说明脚本还在等程序退出（或用户重开又锁上了目录），
-    提示退出等待即可，不重复安排；OK 的残留顺手清掉。
-    多份日志只认最新一份：历史残留的新目录要么已被最新脚本接管，
-    要么本就不完整，对每份都重排会让多个脚本抢同一处替换。
+    替换时运行中的进程占着自己加载的文件，删不掉，只能改名成 OLD_SUFFIX
+    留在原地；这一刻是新进程，没人加载它们，删得掉。启动时扫一遍即可，
+    失败一律忽略 —— 残留只占盘，不影响使用，不值得打断启动。
     """
-    global _auto_exit
-    _auto_exit = False
-    if sys.platform != 'win32' or not FROZEN:
-        return ''
+    if not FROZEN:
+        return
+    root = Path(target) if target else Path(sys.executable).parent
     try:
-        logs = list(Path(tempfile.gettempdir())
-                    .glob('kuraya-update-*/update.log'))
+        stale = list(root.rglob(f'*{OLD_SUFFIX}'))
     except OSError:
-        return ''
-    entries = []
-    for log in logs:
+        return
+    for path in stale:
         try:
-            content = log.read_text(encoding='utf-8-sig',
-                                    errors='replace').strip()
-            entries.append((log.stat().st_mtime, log, content))
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink()
         except OSError:
-            continue
-    if not entries:
-        return ''
-    entries.sort(key=lambda e: e[0])
-    # 历史残留直接清掉，只处理最新一份
-    for _, log, _ in entries[:-1]:
-        shutil.rmtree(log.parent, ignore_errors=True)
-
-    _, log, content = entries[-1]
-    tmp = log.parent
-    target = Path(sys.executable).parent
-    exe_name = 'Kuraya.exe' if sys.platform == 'win32' else 'Kuraya'
-    # 残留的更新目标不高于当前版本：用户已手动升级到位（解压覆盖等），
-    # 残留的 PENDING/FAIL 都是过期信号，直接清掉不提示
-    pending_ver = ''
-    try:
-        pending_ver = (tmp / 'version').read_text(
-            encoding='utf-8').strip()
-    except OSError:
-        pass
-    if pending_ver and not is_newer(pending_ver, __version__):
-        shutil.rmtree(tmp, ignore_errors=True)
-        return ''
-    if content.startswith(('PENDING', 'STARTED')):
-        # 脚本等进程退出的时限是 30 分钟，正常应在用户退出后约 1 分钟内
-        # 完成；停留超过时限还不变（如脚本被安全软件杀掉）说明没有脚本
-        # 在跑，提示「请退出」只会让用户永远等下去——按 FAIL 重排
-        age = time.time() - log.stat().st_mtime
-        if age < PENDING_STUCK:
-            # 用户重开锁住了目录：本进程让位，程序自己退出后脚本才能
-            # 替换并自动打开新版。同一残留只让位一次（marker），
-            # 脚本被杀后不至于每次重开都自动退出
-            marker = tmp / 'autoexit'
-            try:
-                if not marker.exists():
-                    marker.write_text('1', encoding='utf-8')
-                    _auto_exit = True
-            except OSError:
-                pass
-            return (tr('更新尚未完成：请退出本程序，'
-                       '更新完成后会自动重新打开')
-                    + f'\n  {C.GREY}{tmp / "update.log"}{C.RESET}')
-        content = 'FAIL: deferred replace script was killed or stuck'
-    if content.startswith('FAIL'):
-        reason = content.removeprefix('FAIL:').strip() or content
-        new = tmp / 'x' / 'Kuraya'
-        if (new / exe_name).is_file() and _replace_later(new, target):
-            return tr('上次更新未完成：{reason}。已重新安排，请退出本程序，'
-                      '更新完成后会自动重新打开', reason=reason)
-        return (tr('上次更新未完成：{reason}', reason=reason)
-                + tr('（可到下载页手动下载解压：{url}）',
-                     url=RELEASES_URL))
-    # OK 的残留（脚本自清失败）一并扫掉，免得下次误报
-    shutil.rmtree(tmp, ignore_errors=True)
-    return ''
+            pass
 
 
 # ---------- 自更新 ----------
@@ -255,18 +204,7 @@ def update(yes=False, quiet=False):
     # 打包后 PYTHONIOENCODING 不一定生效，中文提示须显式指定输出编码
     console.ensure_utf8()
     enable_ansi()
-    global _deferred
-    _deferred = False
-
-    stale = _pending_failure()
-    if stale:
-        if quiet:
-            # 与 brew 分支同一套：stdout 只留 updated= 一行给脚本判断，
-            # 诊断走 stderr。不能因为 quiet 就把读出来的原因丢掉——
-            # 日志已经在 _pending_failure 里删了，这是它最后一次露面
-            print(stale, file=sys.stderr)
-        else:
-            print(f'  {C.RED}✕{C.RESET} {stale}')
+    global _restart_needed
 
     if _brew_install():
         # brew 维护自己的版本记录（Cellar 目录、formula sha256），
@@ -311,9 +249,6 @@ def update(yes=False, quiet=False):
             return 0
 
     try:
-        # Windows 上若程序自身的 CWD 在目标目录内，目录重命名会被拒绝
-        # （WinError 5），先切到临时目录消除自身占用
-        os.chdir(tempfile.gettempdir())
         if not quiet:
             print(f'  {C.GOLD}◈{C.RESET} '
                   f'{tr("正在下载 v{remote}...", remote=remote)}')
@@ -338,41 +273,20 @@ def update(yes=False, quiet=False):
                     app_old.rename(app_target)
                 raise UpdateError(tr('替换程序目录失败：{exc}', exc=exc)) from exc
 
-        # 再换主目录；失败时回滚已就位的 app
+        # 再换程序本体；失败时回滚已就位的 app
         try:
-            _replace(new, target)
-        except UpdateError as exc:
-            winerror = getattr(exc, 'winerror', None)
-            # 5 = 拒绝访问（运行中的 exe/杀软锁目录），32 = 共享冲突
-            # （资源管理器窗口停在目录里）。两者都属「占用」而非致命，
-            # 安排独立进程在程序退出后替换。
-            if sys.platform == 'win32' and winerror in (5, 32):
-                if _replace_later(new, target, version=remote):
-                    _deferred = True
-                    if app_old is not None:
-                        shutil.rmtree(app_target, ignore_errors=True)
-                        app_old.rename(app_target)
-                    if quiet:
-                        print(f'updated={remote}')
-                    else:
-                        later_msg = tr('程序目录正被占用，'
-                                       '已安排程序退出后自动完成更新')
-                        print(f'  {C.GOLD}◈{C.RESET} {later_msg}')
-                        close_msg = tr('请退出本程序，'
-                                       '更新完成后会自动重新打开')
-                        print(f'  {C.GREY}{close_msg}{C.RESET}')
-                        if _installer_installed(target):
-                            fallback = tr('若重新打开后版本未变，请运行安装命令：'
-                                          'irm https://kuraya.app/install.ps1 | iex')
-                        else:
-                            fallback = tr('若重新打开后版本未变，可到下载页'
-                                          '手动下载解压：{url}', url=RELEASES_URL)
-                        print(f'  {C.GREY}{fallback}{C.RESET}')
-                    return 0
+            # Windows 上目录改不了名（里面的 exe 与 dll 正被本进程加载），
+            # 只能逐个文件换；其余平台没有这道限制，整目录替换更快更干净
+            if sys.platform == 'win32':
+                _replace_in_place(new, target)
+            else:
+                _replace(new, target)
+        except UpdateError:
             if app_old is not None:
                 shutil.rmtree(app_target, ignore_errors=True)
                 app_old.rename(app_target)
             raise
+        _restart_needed = True
         if app_old is not None:
             shutil.rmtree(app_old, ignore_errors=True)
         shutil.rmtree(tmp, ignore_errors=True)
@@ -521,20 +435,6 @@ def _brew_install():
     return 'Cellar' in parts and 'kuraya' in parts
 
 
-def _installer_installed(target):
-    """install.ps1 安装形态：目录固定在 %LOCALAPPDATA%\\Programs\\Kuraya。
-    用于更新失败时给对应形态的恢复提示（解压版没有安装脚本）"""
-    if os.name != 'nt':
-        return False
-    programs = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Programs')
-    target_real = os.path.normcase(os.path.abspath(str(target)))
-    programs_real = os.path.normcase(os.path.abspath(programs))
-    try:
-        return os.path.commonpath([target_real, programs_real]) == programs_real
-    except ValueError:          # 不同盘符时 commonpath 抛错
-        return False
-
-
 def _asset_url(version):
     """按平台与架构拼安装包地址。发行版没有的架构组合直接报错"""
     machine = platform.machine().lower()
@@ -630,175 +530,103 @@ def _download(version):
     return new, tmp
 
 
-def _replace_later(new_dir, target, version=None):
+def _replace_in_place(new_dir, target):
     """
-    延迟替换：程序退出后由独立 cmd 批处理完成目录替换。
+    逐个文件替换程序目录的内容，不动目录本身。
 
-    直接替换失败（WinError 5）通常因为运行中的 exe 锁着目录——
-    Windows 上进程持有的 exe 文件会阻止其所在目录被重命名。
-    早期用 PowerShell 实现，但安全软件会拦 %TEMP% 下脚本执行
-    （日志停在 PENDING，脚本从未运行，更新永远失败）；cmd 批处理
-    是系统核心组件，脚本防护基本不针对它。
-    批处理分两阶段：等程序退出（tasklist 轮询），再重命名目录就位
-    并启动新版。返回是否已安排。临时目录保留给批处理使用，
-    完成后自行清理。
-    version 是下载的目标版本，写进临时目录供启动检查比对：
-    用户手动升级到同版或更新后，残留的 PENDING/FAIL 不再误报。
+    Windows 不让重命名含有已打开文件的目录 —— 而 Kuraya.exe 和 _internal 下的
+    dll 正被本进程加载，所以整目录替换在 Windows 上必然失败。但同一个系统允许
+    重命名正在运行的 exe 与已加载的 dll 本身（实测：exe 与 python313.dll 都能
+    改名，只有 _internal 目录被拒）。于是换个粒度：旧文件改名让位，新文件就位，
+    当场换完，不必等进程退出，也就不需要外部脚本。
+
+    旧文件改名成 OLD_SUFFIX 留在原地，下次启动由 sweep_old() 删掉 —— 本进程
+    删不掉自己加载的文件。新版没有的旧文件同样改名，等价于整目录替换的裁剪。
+
+    任何一步失败就整体回滚：改过名的改回来，搬进来的删掉。要么全成，
+    要么现有安装分毫未动 —— 半新半旧的程序目录是启动不起来的。
     """
-    tmp = new_dir.parent.parent
-    if version:
-        ver_file = tmp / 'version'
+    new_dir, target = Path(new_dir), Path(target)
+    wanted = {path.relative_to(new_dir) for path in new_dir.rglob('*')
+              if path.is_file()}
+    # 旧目录里新版没有的文件也要让位，否则上一版的残留会一直留在目录里
+    try:
+        obsolete = {path.relative_to(target) for path in target.rglob('*')
+                    if path.is_file() and not path.name.endswith(OLD_SUFFIX)
+                    and path.relative_to(target) not in wanted}
+    except OSError as exc:
+        raise UpdateError(tr('读取程序目录失败：{exc}', exc=exc)) from exc
+
+    renamed = []        # [(旧路径, 让位后的路径)]
+    moved = []          # 已就位的新文件
+    try:
+        for relative in sorted(wanted | obsolete):
+            current = target / relative
+            if current.exists():
+                aside = _aside(current)
+                current.rename(aside)
+                renamed.append((current, aside))
+            if relative in wanted:
+                current.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(new_dir / relative), str(current))
+                moved.append(current)
+    except OSError as exc:
+        _rollback(renamed, moved)
+        hint = tr('（多为安全软件拦截或目录权限问题，'
+                  '请将程序目录加入安全软件白名单后重试）')
+        raise UpdateError(tr('替换程序文件失败：{exc}', exc=exc) + hint,
+                          winerror=getattr(exc, 'winerror', None)) from exc
+
+
+def _aside(path):
+    """
+    给旧文件挑一个让位的名字。
+
+    上次更新留下的同名让位文件可能还被本进程加载着、删不掉（同一次运行里连更
+    两版就会撞上）。删不掉就往后排一个，别让这一次更新卡在上一次的残留上。
+    """
+    aside = path.with_name(path.name + OLD_SUFFIX)
+    attempt = 0
+    while aside.exists():
         try:
-            if not ver_file.exists():
-                ver_file.write_text(str(version), encoding='utf-8')
+            aside.unlink()
+        except OSError:
+            attempt += 1
+            aside = path.with_name(f'{path.name}.{attempt}{OLD_SUFFIX}')
+    return aside
+
+
+def _rollback(renamed, moved):
+    """把 _replace_in_place 做过的改动退回去。回滚本身失败无处可退，只能忽略"""
+    for path in moved:
+        try:
+            path.unlink()
         except OSError:
             pass
-    script = tmp / 'replace.cmd'
-    exe_name = 'Kuraya.exe' if sys.platform == 'win32' else 'Kuraya'
-    log = tmp / 'update.log'
-    old_name = target.name + '.old'
-
-    def q(path):
-        # 值里可能含的引号翻倍；外层引号由 set/引用处统一加
-        return str(path).replace('"', '""')
-
-    # UTF-8 BOM 让 cmd 按 UTF-8 解析批处理（中文路径不乱码），
-    # chcp 65001 再保险一道
-    bat = f"""@echo off
-chcp 65001 >nul
-set "LOG={q(log)}"
-set "TARGET={q(target)}"
-set "NEW={q(new_dir)}"
-set "OLD={q(target.parent / old_name)}"
-set "EXE={q(target / exe_name)}"
-> "%LOG%" echo STARTED
-:wait_exit
-tasklist /FI "IMAGENAME eq {exe_name}" 2>nul | find /I "{exe_name}" >nul
-if not errorlevel 1 (
-  timeout /t 2 /nobreak >nul
-  goto wait_exit
-)
-:swap
-if exist "%OLD%" rmdir /s /q "%OLD%" 2>nul
-ren "%TARGET%" "{old_name}" 2>nul
-if errorlevel 1 (
-  timeout /t 2 /nobreak >nul
-  goto swap
-)
-move "%NEW%" "%TARGET%" >nul 2>nul
-if errorlevel 1 (
-  ren "%OLD%" "{target.name}" 2>nul
-  > "%LOG%" echo FAIL: move failed
-  exit /b 1
-)
-rmdir /s /q "%OLD%" 2>nul
-> "%LOG%" echo OK
-tasklist /FI "IMAGENAME eq {exe_name}" 2>nul | find /I "{exe_name}" >nul
-if errorlevel 1 start "" "%EXE%"
-rd /s /q "{q(tmp)}" 2>nul
-"""
-    script.write_text(bat, encoding='utf-8-sig')
-    try:
-        log.write_text('PENDING', encoding='utf-8')
-    except OSError:
-        pass
-    try:
-        # 脱离父进程控制台：双击运行的程序自带控制台窗口，用户点 × 关窗时
-        # Windows 会向同控制台所有进程广播 CTRL_CLOSE_EVENT，不脱离的话
-        # 延迟替换脚本会被一起杀掉，永远跑不完。
-        # getattr 兜底：DETACHED_PROCESS 仅 Windows 存在，测试 mock 平台时安全。
-        subprocess.Popen(
-            ['cmd', '/c', str(script)],
-            creationflags=getattr(subprocess, 'DETACHED_PROCESS', 0))
-        return True
-    except OSError:
-        # 脚本没跑起来：PENDING 残留会让每次启动都误报「请退出程序」，
-        # 而根本没有脚本在执行。改写为 FAIL 让启动检查给出正确引导。
+    for current, aside in reversed(renamed):
         try:
-            log.write_text('FAIL: could not start the deferred replace script',
-                           encoding='utf-8')
+            aside.rename(current)
         except OSError:
             pass
-        return False
-
-
-def _pending_failure():
-    """
-    读回延迟替换留下的结果。上面的脚本把 PENDING/OK/FAIL 写进临时目录的
-    update.log，没人读回来的话，延迟替换失败时用户重开程序只会发现版本没变，
-    屏幕上一个字都没有——原因明明已经写在盘上。
-
-    读到 FAIL 返回提示并清掉临时目录；PENDING 说明脚本还在等程序退出，
-    那个目录归它用，不能碰。无事返回空串。
-
-    必须按 utf-8-sig 读：Windows PowerShell 5.1 的 Set-Content -Encoding UTF8
-    写的是带 BOM 的文件，而 BOM 不是空白字符、strip() 去不掉，按 utf-8 读会
-    让 startswith 全部落空——报错读不出来还顺手把日志删了，等于没做。
-    """
-    if sys.platform != 'win32':
-        return ''
-    try:
-        logs = list(Path(tempfile.gettempdir())
-                    .glob('kuraya-update-*/update.log'))
-    except OSError:
-        return ''
-    reason, newest = '', -1.0
-    for log in logs:
-        try:
-            content = log.read_text(encoding='utf-8-sig',
-                                    errors='replace').strip()
-            stamp = log.stat().st_mtime
-        except OSError:
-            continue
-        if content.startswith('PENDING'):
-            continue
-        # 多份残留时报最近那次：不同次失败原因可能不同，报错次序会带偏排查
-        if content.startswith('FAIL') and stamp >= newest:
-            newest = stamp
-            reason = content.removeprefix('FAIL:').strip() or content
-        # OK 的残留（脚本自清失败）一并扫掉，免得下次误报
-        shutil.rmtree(log.parent, ignore_errors=True)
-    if not reason:
-        return ''
-    return (tr('上次更新未完成：{reason}', reason=reason)
-            + tr('（可到下载页手动下载解压：{url}）', url=RELEASES_URL))
 
 
 def _replace(new_dir, target):
     """
-    原子替换目录：旧目录改名 .old → 新目录就位 → 删除旧目录。
-    就位失败时恢复旧目录。Windows 上运行中的 exe 占着旧目录，
-    删除会失败，残留的 .old 留待下次更新时清理（不影响使用）。
+    整目录替换：旧目录改名 .old → 新目录就位 → 删除旧目录，就位失败恢复旧目录。
+
+    只走 mac / Linux —— 那里没人锁着运行中的程序目录，一次改名就换完。
+    Windows 改不动目录，走 _replace_in_place()。
     """
     backup = target.parent / (target.name + '.old')
     if backup.exists():
         shutil.rmtree(backup, ignore_errors=True)
     try:
-        # Windows 上目录可能被杀软/资源管理器短暂占用，重试几次再放弃
-        for attempt in range(6):
-            try:
-                target.rename(backup)
-                break
-            except OSError:
-                if attempt == 5:
-                    raise
-                time.sleep(0.8)
+        target.rename(backup)
         try:
             shutil.move(str(new_dir), str(target))
         except OSError:
             backup.rename(target)
             raise
     except OSError as exc:
-        if sys.platform == 'win32':
-            if getattr(exc, 'winerror', None) == 5:
-                hint = tr('（拒绝访问：多为安全软件拦截或目录权限问题，'
-                          '请将程序目录加入安全软件白名单，'
-                          '确认没有窗口停留在程序目录内后重试）')
-            else:
-                hint = tr('（Windows 常见原因：有窗口停留在程序目录内，'
-                          '或安全软件正在扫描，关闭后重试）')
-        else:
-            hint = ''
-        raise UpdateError(tr('替换程序目录失败：{exc}', exc=exc) + hint,
-                          winerror=getattr(exc, 'winerror', None)) from exc
+        raise UpdateError(tr('替换程序目录失败：{exc}', exc=exc)) from exc
     shutil.rmtree(backup, ignore_errors=True)

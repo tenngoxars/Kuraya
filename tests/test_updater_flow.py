@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-更新流程：下载解压、延迟替换（安全软件拦截降级）、目录替换。
+更新流程：下载解压、就地逐文件替换（Windows）、整目录替换（其余平台）。
 
     python -m unittest discover tests
 """
@@ -151,156 +151,6 @@ class Download(unittest.TestCase):
             self.addCleanup(shutil.rmtree, tmp_root, ignore_errors=True)
 
 
-class ReplaceLater(unittest.TestCase):
-    """安全软件拦截时降级为延迟替换（独立进程在程序退出后完成）"""
-
-    def test_update_falls_back_to_later_replace(self):
-        """WinError 5（拒绝访问）时安排延迟替换，不再报失败"""
-        new_dir = Path(tempfile.mkdtemp())
-        (new_dir / 'Kuraya').mkdir(parents=True)
-        self.addCleanup(shutil.rmtree, new_dir, ignore_errors=True)
-        exe = '/opt/Kuraya/Kuraya.exe'
-        with mock.patch.object(updater, 'FROZEN', True), \
-                mock.patch.object(updater.sys, 'platform', 'win32'), \
-                mock.patch.object(updater.sys, 'executable', exe), \
-                mock.patch.object(updater, 'latest', return_value='9.9.9'), \
-                mock.patch('builtins.input', return_value='y'), \
-                mock.patch.object(updater, '_download',
-                                  return_value=(new_dir, new_dir.parent)), \
-                mock.patch.object(updater, '_replace',
-                                  side_effect=updater.UpdateError(
-                                      'blocked', winerror=5)), \
-                mock.patch.object(updater, '_replace_later',
-                                  return_value=True) as later:
-            code = updater.update(yes=True)
-        self.assertEqual(code, 0)
-        later.assert_called_once()
-        # 安排了延迟替换：菜单据此退出进程让脚本执行
-        self.assertTrue(updater.deferred_pending())
-
-    def test_later_replace_writes_script_and_launches(self):
-        """延迟批处理包含目标与新目录路径，用脱离控制台的 cmd 启动。
-
-        早期实现用 PowerShell，但安全软件会拦 %TEMP% 下脚本执行
-        （日志停在 PENDING）；cmd 批处理是系统核心组件，脚本防护
-        基本不针对它"""
-        tmp = Path(tempfile.mkdtemp())
-        new_dir = tmp / 'x' / 'Kuraya'
-        target = Path('/opt/Kuraya')
-        with mock.patch.object(updater.subprocess, 'Popen') as popen:
-            ok = updater._replace_later(new_dir, target)
-        self.assertTrue(ok)
-        script = tmp / 'replace.cmd'
-        self.assertTrue(script.is_file())
-        content = script.read_text(encoding='utf-8-sig')
-        self.assertIn('/opt/Kuraya', content)
-        self.assertIn('ren "%TARGET%"', content)
-        self.assertIn('move "%NEW%" "%TARGET%"', content)
-        # 替换完成后自动启动新版本（用户退出一次即可，无需手动重开）
-        self.assertIn('start "" "%EXE%"', content)
-        self.assertIn('STARTED', content)
-        args = popen.call_args[0][0]
-        self.assertEqual(args[0], 'cmd')
-        self.assertEqual(args[args.index('/c') + 1], str(script))
-        # 判别性：脱离父进程控制台（用户点 × 关窗时 CTRL_CLOSE_EVENT
-        # 不会带走脚本）
-        kwargs = popen.call_args[1]
-        self.assertIn('creationflags', kwargs)
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-
-    def test_later_replace_popen_failure_marks_fail(self):
-        """脚本没启动（Popen 失败）时必须改写 FAIL：PENDING 残留会让
-        每次启动都提示「请退出程序」，而根本没有脚本在跑"""
-        tmp = Path(tempfile.mkdtemp())
-        new_dir = tmp / 'x' / 'Kuraya'
-        target = Path('/opt/Kuraya')
-        with mock.patch.object(updater.subprocess, 'Popen',
-                               side_effect=OSError('no powershell')):
-            ok = updater._replace_later(new_dir, target)
-        self.assertFalse(ok)
-        content = (tmp / 'update.log').read_text(encoding='utf-8-sig')
-        self.assertTrue(content.startswith('FAIL'))
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-
-    def test_direct_replace_success_no_deferred_flag(self):
-        """目录未被占用直接替换成功时，不设延迟替换标志（菜单无需退出）"""
-        new_dir = Path(tempfile.mkdtemp())
-        (new_dir / 'Kuraya').mkdir(parents=True)
-        self.addCleanup(shutil.rmtree, new_dir, ignore_errors=True)
-        exe = '/opt/Kuraya/Kuraya.exe'
-        with mock.patch.object(updater, 'FROZEN', True), \
-                mock.patch.object(updater.sys, 'platform', 'win32'), \
-                mock.patch.object(updater.sys, 'executable', exe), \
-                mock.patch.object(updater, 'latest', return_value='9.9.9'), \
-                mock.patch('builtins.input', return_value='y'), \
-                mock.patch.object(updater, '_download',
-                                  return_value=(new_dir, new_dir.parent)), \
-                mock.patch.object(updater, '_replace'):
-            code = updater.update(yes=True)
-        self.assertEqual(code, 0)
-        self.assertFalse(updater.deferred_pending())
-
-    def test_update_falls_back_on_winerror32(self):
-        """WinError 32（共享冲突，如资源管理器占用目录）同样走延迟替换"""
-        new_dir = Path(tempfile.mkdtemp())
-        (new_dir / 'Kuraya').mkdir(parents=True)
-        self.addCleanup(shutil.rmtree, new_dir, ignore_errors=True)
-        exe = '/opt/Kuraya/Kuraya.exe'
-        with mock.patch.object(updater, 'FROZEN', True), \
-                mock.patch.object(updater.sys, 'platform', 'win32'), \
-                mock.patch.object(updater.sys, 'executable', exe), \
-                mock.patch.object(updater, 'latest', return_value='9.9.9'), \
-                mock.patch('builtins.input', return_value='y'), \
-                mock.patch.object(updater, '_download',
-                                  return_value=(new_dir, new_dir.parent)), \
-                mock.patch.object(updater, '_replace',
-                                  side_effect=updater.UpdateError(
-                                      'sharing', winerror=32)), \
-                mock.patch.object(updater, '_replace_later',
-                                  return_value=True) as later:
-            code = updater.update(yes=True)
-        self.assertEqual(code, 0)
-        later.assert_called_once()
-        # 安排了延迟替换：菜单据此退出进程让脚本执行
-        self.assertTrue(updater.deferred_pending())
-
-    def test_later_replace_waits_exit_then_retries_rename(self):
-        """批处理两阶段：先等进程退出（tasklist），再重试重命名（goto）。
-        判别性：旧版固定 sleep/纯进程等待都会失败"""
-        tmp = Path(tempfile.mkdtemp())
-        new_dir = tmp / 'x' / 'Kuraya'
-        target = Path('/opt/Kuraya')
-        with mock.patch.object(updater.sys, 'platform', 'win32'), \
-             mock.patch.object(updater.subprocess, 'Popen'):
-            ok = updater._replace_later(new_dir, target)
-        self.assertTrue(ok)
-        content = (tmp / 'replace.cmd').read_text(encoding='utf-8-sig')
-        # 阶段 1：等进程退出（运行中的 exe 锁目录，重命名必被拒）
-        self.assertIn('tasklist /FI "IMAGENAME eq Kuraya.exe"', content)
-        self.assertIn(':wait_exit', content)
-        # 阶段 2：进程退出后重试重命名（防用户快速重开）
-        self.assertIn(':swap', content)
-        self.assertIn('ren "%TARGET%" "Kuraya.old"', content)
-        self.assertIn('if errorlevel 1', content)
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-
-    def test_update_fails_without_winerror5(self):
-        """非拒绝访问错误不降级，正常报失败"""
-        new_dir = Path(tempfile.mkdtemp())
-        (new_dir / 'Kuraya').mkdir(parents=True)
-        self.addCleanup(shutil.rmtree, new_dir, ignore_errors=True)
-        with mock.patch.object(updater, 'FROZEN', True), \
-                mock.patch.object(updater.sys, 'platform', 'win32'), \
-                mock.patch.object(updater.sys, 'executable',
-                                  '/opt/Kuraya/Kuraya.exe'), \
-                mock.patch.object(updater, 'latest', return_value='9.9.9'), \
-                mock.patch.object(updater, '_download',
-                                  return_value=(new_dir, new_dir.parent)), \
-                mock.patch.object(updater, '_replace',
-                                  side_effect=updater.UpdateError('x')):
-            self.assertEqual(updater.update(yes=True), 1)
-
-
 class Replace(unittest.TestCase):
     """替换顺序：旧目录改名 .old → 新目录就位 → 删旧；失败恢复"""
 
@@ -328,97 +178,150 @@ class Replace(unittest.TestCase):
         self.assertEqual((self.target / 'old.txt').read_text(), 'old')
         self.assertFalse((self.root / 'Kuraya.old').exists())
 
-    def test_retries_transient_rename_failure(self):
-        """Windows 上目录可能被杀软短暂占用，rename 失败要重试"""
-        real_rename = Path.rename
-        calls = {'n': 0}
-
-        def flaky(self_, dst):
-            calls['n'] += 1
-            if calls['n'] <= 2:
-                raise OSError('Access is denied')
-            return real_rename(self_, dst)
-
-        with mock.patch.object(Path, 'rename', flaky):
-            updater._replace(self.new, self.target)
-        self.assertEqual((self.target / 'new.txt').read_text(), 'new')
-        self.assertEqual(calls['n'], 3)
-
-    def test_gives_up_after_retries(self):
+    def test_rename_failure_keeps_install(self):
+        """改名失败就整个放弃，现有安装原样保留"""
         with mock.patch.object(Path, 'rename',
                                side_effect=OSError('Access is denied')):
             with self.assertRaises(updater.UpdateError):
                 updater._replace(self.new, self.target)
-        # 旧目录未被破坏（rename 始终失败，原样保留）
         self.assertTrue((self.root / 'Kuraya').is_dir())
+        self.assertEqual((self.target / 'old.txt').read_text(), 'old')
 
 
-class PendingFailure(unittest.TestCase):
-    """延迟替换的结果必须读回来：脚本把原因写在盘上，没人读的话
-    用户重开只看到版本没变，屏幕上一个字都没有"""
+class ReplaceInPlace(unittest.TestCase):
+    """
+    Windows 上目录改不了名（里面的 exe 与 dll 正被本进程加载），只能逐个文件换：
+    旧文件改名让位，新文件就位，当场换完。
+    """
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.target = self.root / 'Kuraya'
+        (self.target / '_internal').mkdir(parents=True)
+        (self.target / 'Kuraya.exe').write_text('v1')
+        (self.target / '_internal' / 'python313.dll').write_text('dll v1')
+        (self.target / '_internal' / 'gone.pyd').write_text('上一版才有的')
+        self.new = self.root / 'new'
+        (self.new / '_internal').mkdir(parents=True)
+        (self.new / 'Kuraya.exe').write_text('v2')
+        (self.new / '_internal' / 'python313.dll').write_text('dll v2')
+        (self.new / '_internal' / 'added.pyd').write_text('新版才有的')
 
-    def write_log(self, content, bom=False, name='abc'):
-        d = self.tmp / f'kuraya-update-{name}'
-        d.mkdir()
-        # bom=True 复现 Windows PowerShell 5.1：Set-Content -Encoding UTF8
-        # 写的是带 BOM 的文件，脚本报 FAIL 时走的正是这条路
-        (d / 'update.log').write_text(
-            content, encoding='utf-8-sig' if bom else 'utf-8')
-        return d
+    def aside(self, *parts):
+        return self.target.joinpath(*parts).with_name(
+            parts[-1] + updater.OLD_SUFFIX)
 
-    def run_check(self, platform='win32'):
-        with mock.patch.object(updater.sys, 'platform', platform), \
-                mock.patch.object(updater.tempfile, 'gettempdir',
-                                  return_value=str(self.tmp)):
-            return updater._pending_failure()
+    def test_files_replaced_without_touching_the_directory(self):
+        """目录本身自始至终没动过——它改不了名，这正是整套办法的前提"""
+        stat_before = self.target.stat()
+        updater._replace_in_place(self.new, self.target)
+        self.assertEqual(self.target.stat().st_ino, stat_before.st_ino)
+        self.assertEqual((self.target / 'Kuraya.exe').read_text(), 'v2')
+        self.assertEqual(
+            (self.target / '_internal' / 'python313.dll').read_text(), 'dll v2')
 
-    def test_failure_reported_and_cleaned(self):
-        d = self.write_log('FAIL: Access to the path is denied')
-        message = self.run_check()
-        self.assertIn('Access to the path is denied', message)
-        self.assertIn(updater.RELEASES_URL, message)
-        self.assertFalse(d.exists())        # 报过一次就清掉，不重复打扰
+    def test_old_files_are_renamed_not_deleted(self):
+        """本进程加载着旧文件，删不掉，只能改名留到下次启动"""
+        updater._replace_in_place(self.new, self.target)
+        self.assertEqual(self.aside('Kuraya.exe').read_text(), 'v1')
+        self.assertEqual(
+            self.aside('_internal', 'python313.dll').read_text(), 'dll v1')
 
-    def test_bom_prefixed_failure_still_read(self):
-        """PS 5.1 写的 update.log 带 BOM，而 BOM 不是空白字符、strip() 去不掉。
-        按 utf-8 读会让 startswith 全部落空——报错读不出来还顺手把日志删了"""
-        d = self.write_log('FAIL: Access to the path is denied', bom=True)
-        message = self.run_check()
-        self.assertIn('Access to the path is denied', message)
-        self.assertFalse(d.exists())
+    def test_new_file_added(self):
+        updater._replace_in_place(self.new, self.target)
+        self.assertEqual(
+            (self.target / '_internal' / 'added.pyd').read_text(), '新版才有的')
 
-    def test_newest_failure_wins(self):
-        """多份残留时报最近那次：不同次的失败原因可能完全不同"""
-        old = self.write_log('FAIL: timed out waiting', name='old')
-        new = self.write_log('FAIL: Access to the path is denied', name='new')
-        os.utime(old / 'update.log', (1_600_000_000, 1_600_000_000))
-        os.utime(new / 'update.log', (1_700_000_000, 1_700_000_000))
-        message = self.run_check()
-        self.assertIn('Access to the path is denied', message)
-        self.assertNotIn('timed out', message)
-        self.assertFalse(old.exists())
-        self.assertFalse(new.exists())
+    def test_obsolete_file_moved_aside(self):
+        """新版没有的旧文件也要让位，否则上一版的残留会一直留着"""
+        updater._replace_in_place(self.new, self.target)
+        self.assertFalse((self.target / '_internal' / 'gone.pyd').exists())
+        self.assertEqual(
+            self.aside('_internal', 'gone.pyd').read_text(), '上一版才有的')
 
-    def test_pending_left_alone(self):
-        """脚本可能还在等程序退出，那个目录归它用，不能碰也不能误报"""
-        d = self.write_log('PENDING')
-        self.assertEqual(self.run_check(), '')
-        self.assertTrue(d.exists())
+    def test_rollback_leaves_install_untouched(self):
+        """半新半旧的程序目录是启动不起来的：中途失败必须整体退回去"""
+        real_move = updater.shutil.move
+        calls = {'n': 0}
 
-    def test_success_leftover_swept(self):
-        d = self.write_log('OK')
-        self.assertEqual(self.run_check(), '')
-        self.assertFalse(d.exists())
+        def flaky(src, dst):
+            calls['n'] += 1
+            if calls['n'] == 2:
+                raise OSError('locked')
+            return real_move(src, dst)
 
-    def test_other_platforms_skip(self):
-        """延迟替换是 Windows 专属，别的平台不该扫临时目录"""
-        d = self.write_log('FAIL: boom')
-        self.assertEqual(self.run_check(platform='darwin'), '')
-        self.assertTrue(d.exists())
+        with mock.patch.object(updater.shutil, 'move', flaky):
+            with self.assertRaises(updater.UpdateError):
+                updater._replace_in_place(self.new, self.target)
+
+        self.assertEqual((self.target / 'Kuraya.exe').read_text(), 'v1')
+        self.assertEqual(
+            (self.target / '_internal' / 'python313.dll').read_text(), 'dll v1')
+        self.assertEqual(
+            (self.target / '_internal' / 'gone.pyd').read_text(), '上一版才有的')
+        self.assertFalse((self.target / '_internal' / 'added.pyd').exists())
+        left = list(self.target.rglob(f'*{updater.OLD_SUFFIX}'))
+        self.assertEqual(left, [])
+
+    def test_undeletable_leftover_gets_another_name(self):
+        """同一次运行里连更两版：上一版的让位文件还被加载着删不掉，
+        这一次得往后排一个，不能卡在上次的残留上"""
+        stuck = self.target / f'Kuraya.exe{updater.OLD_SUFFIX}'
+        stuck.write_text('v0')
+        with mock.patch.object(updater.Path, 'unlink',
+                               side_effect=OSError('still loaded')):
+            updater._replace_in_place(self.new, self.target)
+        self.assertEqual((self.target / 'Kuraya.exe').read_text(), 'v2')
+        self.assertEqual(stuck.read_text(), 'v0')
+        self.assertEqual(
+            (self.target / f'Kuraya.exe.1{updater.OLD_SUFFIX}').read_text(), 'v1')
+
+    def test_failure_carries_winerror(self):
+        """占用类失败要带上 Windows 的原话，用户才知道是杀软还是权限"""
+        exc = OSError('Access is denied')
+        exc.winerror = 5
+        with mock.patch.object(updater.shutil, 'move', side_effect=exc):
+            with self.assertRaises(updater.UpdateError) as caught:
+                updater._replace_in_place(self.new, self.target)
+        self.assertEqual(caught.exception.winerror, 5)
+
+
+class SweepOld(unittest.TestCase):
+    """让位的旧文件本进程删不掉（还加载着），下次启动没人加载了才删得掉"""
+
+    def setUp(self):
+        self.target = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.target, ignore_errors=True)
+        (self.target / '_internal').mkdir()
+        (self.target / f'Kuraya.exe{updater.OLD_SUFFIX}').write_text('v1')
+        (self.target / '_internal' / f'a.dll{updater.OLD_SUFFIX}').write_text('x')
+        (self.target / 'Kuraya.exe').write_text('v2')
+
+    def sweep(self):
+        with mock.patch.object(updater, 'FROZEN', True):
+            updater.sweep_old(self.target)
+
+    def test_old_files_removed(self):
+        self.sweep()
+        self.assertEqual(list(self.target.rglob(f'*{updater.OLD_SUFFIX}')), [])
+
+    def test_current_files_kept(self):
+        self.sweep()
+        self.assertEqual((self.target / 'Kuraya.exe').read_text(), 'v2')
+
+    def test_undeletable_leftover_is_ignored(self):
+        """删不掉只是占盘，不值得打断启动"""
+        with mock.patch.object(updater.Path, 'unlink',
+                               side_effect=OSError('still locked')):
+            self.sweep()
+        self.assertTrue((self.target / f'Kuraya.exe{updater.OLD_SUFFIX}').exists())
+
+    def test_source_install_skipped(self):
+        """没打包就没有更新这回事，别去翻源码目录"""
+        with mock.patch.object(updater, 'FROZEN', False):
+            updater.sweep_old(self.target)
+        self.assertTrue((self.target / f'Kuraya.exe{updater.OLD_SUFFIX}').exists())
 
 
 if __name__ == '__main__':

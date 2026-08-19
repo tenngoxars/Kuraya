@@ -162,31 +162,38 @@ class RunExecBranches(unittest.TestCase):
             menu.run()
         self.assertEqual(clear.call_count, 2)
 
-    def test_update_deferred_exits_menu(self):
-        """选 5 更新且安排了延迟替换：菜单直接退出（返回 0），
-        进程退出后替换脚本才能执行；不安排则照常等按键"""
-        with mock.patch('kuraya.keys.read_key', side_effect=['5']), \
+    def menu_after_update(self, restart, relaunch=True, keys=('5',)):
+        """选 5 更新后走一轮菜单，返回 (退出码, pause mock, relaunch mock)"""
+        with mock.patch('kuraya.keys.read_key', side_effect=list(keys)), \
              mock.patch.object(menu, 'clear_screen'), \
              mock.patch('kuraya.updater.text', return_value=''), \
              mock.patch.object(menu.updater, 'update', return_value=0), \
-             mock.patch.object(menu.updater, 'deferred_pending',
-                               return_value=True), \
+             mock.patch.object(menu.updater, 'restart_needed',
+                               return_value=restart), \
+             mock.patch.object(menu.updater, 'relaunch',
+                               return_value=relaunch) as relaunched, \
              mock.patch.object(menu, 'pause') as pause:
-            code = menu.run()
+            return menu.run(), pause, relaunched
+
+    def test_update_relaunches_and_exits_menu(self):
+        """换过程序文件：内存里跑的还是旧版，重开新版并退出，不回菜单"""
+        code, pause, relaunched = self.menu_after_update(restart=True)
         self.assertEqual(code, 0)
+        relaunched.assert_called_once()
         pause.assert_not_called()
 
-    def test_update_direct_keeps_menu(self):
-        """选 5 更新且直接替换成功（未安排延迟替换）：菜单继续，等按键"""
-        with mock.patch('kuraya.keys.read_key', side_effect=['5', 'esc']), \
-             mock.patch.object(menu, 'clear_screen'), \
-             mock.patch('kuraya.updater.text', return_value=''), \
-             mock.patch.object(menu.updater, 'update', return_value=0), \
-             mock.patch.object(menu.updater, 'deferred_pending',
-                               return_value=False), \
-             mock.patch.object(menu, 'pause') as pause:
-            code = menu.run()
+    def test_update_without_relaunch_tells_user_to_restart(self):
+        """重开不了（非 Windows）也不能回菜单接着用旧版，提示后退出"""
+        code, pause, _ = self.menu_after_update(restart=True, relaunch=False)
         self.assertEqual(code, 0)
+        pause.assert_called_once()
+
+    def test_no_update_keeps_menu(self):
+        """没换文件（已是最新／更新失败）：照常等按键回菜单"""
+        code, pause, relaunched = self.menu_after_update(
+            restart=False, keys=('5', 'esc'))
+        self.assertEqual(code, 0)
+        relaunched.assert_not_called()
         pause.assert_called_once()
 
 

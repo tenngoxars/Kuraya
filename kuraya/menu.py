@@ -266,8 +266,8 @@ def settings_menu():
             # 语言菜单内按 Esc 返回即完成，不再追加「按回车返回菜单」
 
 
-def run(pending=''):
-    """菜单主循环。返回退出码。pending 为延迟替换遗留提示，画在菜单头部"""
+def run():
+    """菜单主循环。返回退出码"""
     console.enable_ansi()
 
     while True:
@@ -293,11 +293,6 @@ def run(pending=''):
 
         def header():
             draw_header(library, source)
-            # 延迟替换的遗留提示：菜单进备用屏幕会清掉主屏，
-            # 启动时打印的内容在这里重画出来用户才看得到
-            if pending:
-                say()
-                say(f'  {C.RED}✕{C.RESET} {pending}')
 
         options = [
             ('1', tr("刮削入库"), tr("处理待整理目录并归入片库")),
@@ -340,8 +335,12 @@ def run(pending=''):
             clear_screen()
             say()
             updater.update()
-            # 延迟替换已安排：进程必须退出脚本才能替换目录，
-            # 直接结束菜单让程序退出，完成后脚本会自动重新打开
-            if updater.deferred_pending():
+            # 程序文件已换成新版，内存里跑的还是旧版：重开新版再退出，
+            # 用户不用自己关了再点一次
+            if updater.restart_needed():
+                if not updater.relaunch():
+                    say()
+                    say(f'  {C.GREY}{tr("已更新，请重新启动本程序")}{C.RESET}')
+                    pause()
                 return 0
             pause()

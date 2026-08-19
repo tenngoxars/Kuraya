@@ -160,23 +160,6 @@ class UpdateCommand(unittest.TestCase):
             code = updater.update(yes=True, quiet=True)
         self.assertEqual(code, 0)
 
-    def test_quiet_routes_pending_failure_to_stderr(self):
-        """quiet 的 stdout 只留 updated= 一行给脚本判断，但上次更新失败的原因
-        不能因此丢掉——日志在 _pending_failure 里已被删除，这是它最后一次露面"""
-        import io
-        from contextlib import redirect_stdout, redirect_stderr
-        out, err = io.StringIO(), io.StringIO()
-        with mock.patch.object(updater, 'latest', return_value='0.2.3'), \
-                self.frozen()[0], self.frozen()[1], \
-                mock.patch.object(
-                    updater, '_pending_failure',
-                    return_value='上次更新未完成：Access is denied'), \
-                redirect_stdout(out), redirect_stderr(err):
-            code = updater.update(yes=True, quiet=True)
-        self.assertEqual(code, 0)
-        self.assertEqual(out.getvalue().strip(), 'updated=none')
-        self.assertIn('Access is denied', err.getvalue())
-
     def test_quiet_none_output(self):
         with mock.patch.object(updater, 'latest',
                                return_value='0.2.3'), \

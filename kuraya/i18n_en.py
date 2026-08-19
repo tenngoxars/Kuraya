@@ -30,19 +30,12 @@ TABLE = {
     '选择待整理目录': 'Choose the pending folder',
     '选择播放器程序': 'Choose the player program',
     '请选择「设置」重新指定影片库位置': 'Choose "Settings" to point at the library again',
-    '程序目录正被占用，已安排程序退出后自动完成更新': 'The program folder is in use — the update will finish after the program exits',
-    '请退出本程序，更新完成后会自动重新打开': 'Exit the program — it will reopen automatically once the update is done',
-    '更新尚未完成：请退出本程序，更新完成后会自动重新打开': 'The update is not finished — exit the program, it will reopen automatically once done',
-    '程序将自动退出，更新完成后会自动重新打开': 'The program will exit on its own and reopen automatically once the update is done',
     '发现旧版本 {name}': 'Found an existing copy {name}',
     '旧文件': 'Old file',
     '新文件': 'New file',
     '用新文件替换（旧文件移入废纸篓）？': 'Replace with the new file (the old one moves to the Trash)?',
     '替换': 'Replace',
     '跳过': 'Skip',
-    '上次更新未完成：{reason}。已重新安排，请退出本程序，更新完成后会自动重新打开': 'The last update did not finish: {reason}. It has been rescheduled — exit the program, it will reopen automatically once done',
-    '若重新打开后版本未变，请运行安装命令：irm https://kuraya.app/install.ps1 | iex': 'If the version is still old after reopening, run the installer: irm https://kuraya.app/install.ps1 | iex',
-    '若重新打开后版本未变，可到下载页手动下载解压：{url}': 'If the version is still old after reopening, download and extract it manually from: {url}',
     '页面尚未生成，请先执行「重建页面」': 'Page not generated yet — run "Rebuild page" first',
     '已在浏览器中打开': 'Opened in browser',
     '打开失败：{path}': 'Failed to open: {path}',
@@ -164,6 +157,8 @@ TABLE = {
     '  {number}  未找到': '  {number}  not found',
     '  {number}  网络不可用：{exc}': '  {number}  network unavailable: {exc}',
     '      缺字段：{fields}': '      Missing fields: {fields}',
+    '      演员表里没有 {name}，疑似取到站点截短的显示名':
+        '      {name} missing from cast, likely reading the site\u2019s clipped display name',
     '      发行商与系列同值，疑似字段串位：{value}':
         '      Label and series are identical — fields may be crossed: {value}',
     '发现新版本 v{remote}': 'New version v{remote} available',
@@ -187,9 +182,15 @@ TABLE = {
     '下载失败（已重试 {tries} 次）：{kind}': 'Download failed after {tries} retries: {kind}',
     '（网络不稳或连不上 GitHub：可设 HTTPS_PROXY 后重试，或到 {url} 手动下载解压）': ' (Network trouble or GitHub unreachable — set HTTPS_PROXY and retry, or download and unzip manually from {url})',
     '解压失败：{kind}': 'Extract failed: {kind}',
-    '上次更新未完成：{reason}': 'The last update did not finish: {reason}',
-    '（可到下载页手动下载解压：{url}）': ' (Download and unzip manually from {url})',
     '安装包结构不符，已放弃（现有安装未动）': 'Package structure mismatch — aborted (existing install untouched)',
+    '替换程序文件失败：{exc}':
+        'Could not replace program files: {exc}',
+    '（多为安全软件拦截或目录权限问题，请将程序目录加入安全软件白名单后重试）':
+        ' (usually security software or folder permissions: add the program folder to your allowlist and retry)',
+    '读取程序目录失败：{exc}':
+        'Could not read the program folder: {exc}',
+    '已更新，请重新启动本程序':
+        'Updated. Please restart the program',
     '替换程序目录失败：{exc}': 'Failed to replace the program directory: {exc}',
     '（Windows 常见原因：有窗口停留在程序目录内，或安全软件正在扫描，关闭后重试）': ' (Windows: a window may be open inside the program folder, or security software is scanning — close them and retry)',
     '（拒绝访问：多为安全软件拦截或目录权限问题，请将程序目录加入安全软件白名单，确认没有窗口停留在程序目录内后重试）': ' (Access denied: usually security software blocking self-update, or a folder permission issue — allowlist the program folder in your security software and make sure no window is open inside it, then retry)',

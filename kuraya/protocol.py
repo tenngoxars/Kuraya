@@ -8,6 +8,7 @@
 
 注册写入 HKEY_CURRENT_USER，不需要管理员权限。
 """
+import filecmp
 import os
 import shlex
 import shutil
@@ -78,26 +79,49 @@ def _shell_app_ready(base):
     return macos.is_dir() and any(macos.iterdir())
 
 
+def _same_build(src, installed):
+    """
+    装好的壳 app 与随包那份是不是同一个构建。
+
+    只判「装没装」的话，壳 app 一旦改过，老用户永远拿不到新的——自愈只能治
+    「没装」，治不了「装的是旧的」，而更新换掉的是随包那份，注册在用的那份
+    纹丝不动。不写版本标记文件：包是 ad-hoc 签名的，往 Contents 里塞东西会
+    破坏签名，逐字节比一遍更省事，整个包也就百来 KB。
+    """
+    try:
+        want = sorted(p.relative_to(src) for p in src.rglob('*') if p.is_file())
+        have = sorted(p.relative_to(installed) for p in installed.rglob('*')
+                      if p.is_file())
+        if want != have:
+            return False
+        return all(filecmp.cmp(src / rel, installed / rel, shallow=False)
+                   for rel in want)
+    except OSError:
+        return False
+
+
 def ensure_shell_app():
     """
     打包版在 macOS 上的点击封面播放：把随包分发的 Kuraya.app
     （osacompile 生成的协议壳，见 packaging/scheme_handler.applescript）
     装到 ~/Applications 并注册。放 main() 里自愈，安装方式无关——
     brew 的 sandbox 写不了用户目录，由程序自身来完成。
+    没装、装了一半、装的是旧构建，三种情况都重装。
     失败静默，不影响主流程。
     """
     if sys.platform != 'darwin' or not getattr(sys, 'frozen', False):
         return False
     target = Path.home() / 'Applications' / 'Kuraya.app'
-    if _shell_app_ready(target.parent):
-        return True
     # 随包位置：zip/brew/脚本安装的壳 app 都在 exe 父级（如 ~/.local/opt/Kuraya.app、
     # libexec/Kuraya.app），exe 同级只兜底手动布局
     here = Path(sys.executable).resolve().parent
     sources = (here / 'Kuraya.app', here.parent / 'Kuraya.app')
     src = next((p for p in sources if p.is_dir()), None)
     if src is None:
-        return False
+        # 随包那份不在（用户删了、或非标准布局）：装好的那份只能将就用
+        return _shell_app_ready(target.parent)
+    if _shell_app_ready(target.parent) and _same_build(src, target):
+        return True
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists():

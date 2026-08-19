@@ -7,6 +7,7 @@ kuraya: 协议 URL 解析与平台探测的测试。
 
     python -m unittest discover tests
 """
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -183,6 +184,77 @@ class EnsureShellApp(unittest.TestCase):
                 self.assertTrue(protocol.ensure_shell_app())
             # 重装后 MacOS 下有可执行文件，且重新注册过 lsregister
             self.assertTrue((half / 'Kuraya').is_file())
+            run.assert_called_once()
+
+    def test_stale_build_is_refreshed(self):
+        """壳 app 改过之后老用户也要拿到新的——自愈不能只治「没装」"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / 'opt' / 'kuraya' / 'Kuraya'
+            exe.parent.mkdir(parents=True)
+            exe.write_text('')
+            src = root / 'opt' / 'Kuraya.app'
+            (src / 'Contents' / 'MacOS').mkdir(parents=True)
+            (src / 'Contents' / 'MacOS' / 'applet').write_text('新构建')
+            home = root / 'home'
+            installed = home / 'Applications' / 'Kuraya.app'
+            (installed / 'Contents' / 'MacOS').mkdir(parents=True)
+            (installed / 'Contents' / 'MacOS' / 'applet').write_text('旧构建')
+            with mock.patch.object(protocol.sys, 'platform', 'darwin'), \
+                    mock.patch.object(protocol.sys, 'frozen', True, create=True), \
+                    mock.patch.object(protocol.sys, 'executable', str(exe)), \
+                    mock.patch('pathlib.Path.home', return_value=home), \
+                    mock.patch('kuraya.protocol.subprocess.run') as run:
+                self.assertTrue(protocol.ensure_shell_app())
+            self.assertEqual(
+                (installed / 'Contents' / 'MacOS' / 'applet').read_text(), '新构建')
+            run.assert_called_once()
+
+    def test_same_build_left_alone(self):
+        """一模一样就别动：每次启动都重装 + lsregister 是白费"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / 'opt' / 'kuraya' / 'Kuraya'
+            exe.parent.mkdir(parents=True)
+            exe.write_text('')
+            src = root / 'opt' / 'Kuraya.app'
+            (src / 'Contents' / 'MacOS').mkdir(parents=True)
+            (src / 'Contents' / 'MacOS' / 'applet').write_text('同一个构建')
+            (src / 'Contents' / 'Info.plist').write_text('<plist/>')
+            home = root / 'home'
+            installed = home / 'Applications' / 'Kuraya.app'
+            installed.parent.mkdir(parents=True)
+            shutil.copytree(src, installed)
+            with mock.patch.object(protocol.sys, 'platform', 'darwin'), \
+                    mock.patch.object(protocol.sys, 'frozen', True, create=True), \
+                    mock.patch.object(protocol.sys, 'executable', str(exe)), \
+                    mock.patch('pathlib.Path.home', return_value=home), \
+                    mock.patch('kuraya.protocol.subprocess.run') as run:
+                self.assertTrue(protocol.ensure_shell_app())
+            run.assert_not_called()
+
+    def test_extra_file_counts_as_different(self):
+        """新构建多一个文件也算变了，只比同名文件会漏掉"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exe = root / 'opt' / 'kuraya' / 'Kuraya'
+            exe.parent.mkdir(parents=True)
+            exe.write_text('')
+            src = root / 'opt' / 'Kuraya.app'
+            (src / 'Contents' / 'MacOS').mkdir(parents=True)
+            (src / 'Contents' / 'MacOS' / 'applet').write_text('同一个构建')
+            home = root / 'home'
+            installed = home / 'Applications' / 'Kuraya.app'
+            installed.parent.mkdir(parents=True)
+            shutil.copytree(src, installed)
+            (src / 'Contents' / 'Info.plist').write_text('<plist/>')  # 新增
+            with mock.patch.object(protocol.sys, 'platform', 'darwin'), \
+                    mock.patch.object(protocol.sys, 'frozen', True, create=True), \
+                    mock.patch.object(protocol.sys, 'executable', str(exe)), \
+                    mock.patch('pathlib.Path.home', return_value=home), \
+                    mock.patch('kuraya.protocol.subprocess.run') as run:
+                self.assertTrue(protocol.ensure_shell_app())
+            self.assertTrue((installed / 'Contents' / 'Info.plist').is_file())
             run.assert_called_once()
 
     def test_no_source_app(self):

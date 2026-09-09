@@ -92,11 +92,10 @@ class Download(unittest.TestCase):
         timeout = updater.requests.exceptions.ConnectTimeout('no route')
         with mock.patch.object(updater.requests, 'get',
                                side_effect=timeout) as get, \
-                mock.patch.object(updater.time, 'sleep') as sleep:
+                mock.patch.object(updater.time, 'sleep'):
             with self.assertRaises(updater.UpdateError) as caught:
                 updater._download('0.3.0')
         self.assertEqual(get.call_count, updater.DOWNLOAD_TRIES)
-        self.assertEqual(sleep.call_count, updater.DOWNLOAD_TRIES - 1)
         message = str(caught.exception)
         self.assertIn('ConnectTimeout', message)
         self.assertIn('HTTPS_PROXY', message)

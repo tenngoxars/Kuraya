@@ -16,7 +16,7 @@ from unittest import mock
 from lxml import etree
 
 from kuraya.media import javbus
-from kuraya.media.javbus import XPATH, _actors, _one
+from kuraya.media.javbus import XPATH, _actors, _jpeg_size, _mgs_package_cover, _one
 from kuraya.media.model import Movie
 
 # 各形状只写信息块片段，套壳交给 dom()
@@ -189,6 +189,130 @@ class SelftestDetectsBleeding(unittest.TestCase):
     def test_both_empty_is_not_bleeding(self):
         """系列本来就常缺，不能因为双空就报警"""
         self.assertEqual(self.run_selftest(movie('', '')), 0)
+
+
+def jpeg(width, height):
+    """造一个只带 SOF0 段的最小 JPEG，够 _jpeg_size 读出尺寸。"""
+    return (b'\xff\xd8\xff\xc0\x00\x11\x08'
+            + height.to_bytes(2, 'big') + width.to_bytes(2, 'big') + b'\x03\x00\xff\xd9')
+
+
+# MGS 系页面：截图地址与包图同目录，包图靠 cap_e 推出来
+MGS_PAGE = ('<a class="bigImage" href="/pics/cover/ck0l_b.jpg">'
+            '<img src="https://image.mgstage.com/images/planetplus/263clot/044/'
+            'cap_e_0_263clot-044.jpg">'
+            '<img src="https://image.mgstage.com/images/planetplus/263clot/044/'
+            'cap_e_10_263clot-044.jpg">')
+NO_MGS_PAGE = '<a class="bigImage" href="/pics/cover/byk7_b.jpg"></a>'
+
+JAVBUS_COVER = 'https://www.javbus.com/pics/cover/ck0l_b.jpg'
+PACKAGE_COVER = 'https://image.mgstage.com/images/planetplus/263clot/044/pf_e_263clot-044.jpg'
+
+
+class MgsPackageCover(unittest.TestCase):
+    """
+    javbus 对 MGS 系的片子存的是横版宣传图（左边一条厂牌 logo），贴到竖版墙上
+    会被裁得认不出。页面上带 mgstage 截图地址时，同目录的 pf_e 才是竖版包图。
+    """
+
+    def test_url_derived_from_first_capture(self):
+        self.assertEqual(_mgs_package_cover(MGS_PAGE), PACKAGE_COVER)
+
+    def test_page_without_mgstage_yields_nothing(self):
+        self.assertEqual(_mgs_package_cover(NO_MGS_PAGE), '')
+
+    def test_empty_page_yields_nothing(self):
+        self.assertEqual(_mgs_package_cover(''), '')
+
+
+class JpegSize(unittest.TestCase):
+
+    def test_reads_sof_dimensions(self):
+        self.assertEqual(_jpeg_size(jpeg(840, 564)), (840, 564))
+
+    def test_rejects_other_bytes(self):
+        self.assertIsNone(_jpeg_size(b'<html>not an image</html>'))
+
+    def test_rejects_truncated_header(self):
+        self.assertIsNone(_jpeg_size(b'\xff\xd8\xff\xc0'))
+
+
+class CoverPrefersPortrait(unittest.TestCase):
+    """
+    竖版优先：DMM 有的母版本身就是横版大图，javbus 对 MGS 系存的也是横版宣传图，
+    这两种直接上墙都会被裁得认不出。一个竖版都拿不到时才退回横版。
+    """
+
+    DMM_URL = javbus._dmm_candidates('CLOT-044')[0]
+
+    def patch_network(self, sizes, head=0):
+        """sizes: {url: (宽, 高)}，未列出的地址当作取不到"""
+        def fake_get_bytes(url, headers=None):
+            if url in sizes:
+                return jpeg(*sizes[url])
+            raise javbus.http.Unavailable(url)
+        return (mock.patch.object(javbus.http, 'head_size', return_value=head),
+                mock.patch.object(javbus.http, 'get_bytes', side_effect=fake_get_bytes))
+
+    def test_portrait_dmm_master_wins(self):
+        head, get = self.patch_network({self.DMM_URL: (1200, 1700),
+                                        PACKAGE_COVER: (422, 600),
+                                        JAVBUS_COVER: (379, 537)}, head=200000)
+        with head, get:
+            self.assertEqual(javbus.cover_url('CLOT-044', '/pics/cover/ck0l_b.jpg', MGS_PAGE),
+                             self.DMM_URL)
+
+    def test_landscape_dmm_master_falls_through_to_portrait(self):
+        """母版是横版时不认体积，改用竖版那张"""
+        head, get = self.patch_network({self.DMM_URL: (2184, 1468),
+                                        JAVBUS_COVER: (379, 537)}, head=200000)
+        with head, get:
+            self.assertEqual(javbus.cover_url('CLOT-044', '/pics/cover/ck0l_b.jpg', MGS_PAGE),
+                             JAVBUS_COVER)
+
+    def test_package_preferred_when_no_dmm_master(self):
+        head, get = self.patch_network({PACKAGE_COVER: (422, 600),
+                                        JAVBUS_COVER: (840, 564)})
+        with head, get:
+            self.assertEqual(javbus.cover_url('CLOT-044', '/pics/cover/ck0l_b.jpg', MGS_PAGE),
+                             PACKAGE_COVER)
+
+    def test_portrait_javbus_cover_is_kept(self):
+        head, get = self.patch_network({JAVBUS_COVER: (379, 537)})
+        with head, get:
+            self.assertEqual(javbus.cover_url('CLOT-037', '/pics/cover/ck0l_b.jpg', MGS_PAGE),
+                             JAVBUS_COVER)
+
+    def test_landscape_without_package_keeps_javbus(self):
+        """页面上没有 mgstage 地址时，宁可用横版也不凭空造一个地址"""
+        head, get = self.patch_network({JAVBUS_COVER: (840, 564)})
+        with head, get:
+            self.assertEqual(javbus.cover_url('XXXX-001', '/pics/cover/ck0l_b.jpg', NO_MGS_PAGE),
+                             JAVBUS_COVER)
+
+    def test_all_landscape_returns_the_biggest(self):
+        """一张竖版都没有时，退回体积最大的那张，不做无米之炊"""
+        head, get = self.patch_network({self.DMM_URL: (2184, 1468),
+                                        JAVBUS_COVER: (800, 538)}, head=200000)
+        with head, get:
+            self.assertEqual(javbus.cover_url('CLOT-044', '/pics/cover/ck0l_b.jpg', NO_MGS_PAGE),
+                             self.DMM_URL)
+
+    def test_no_candidate_reachable_returns_empty(self):
+        head, get = self.patch_network({})
+        with head, get:
+            self.assertEqual(javbus.cover_url('XXXX-003', '', NO_MGS_PAGE), '')
+
+
+class ImageHeaders(unittest.TestCase):
+
+    def test_javbus_image_carries_user_agent(self):
+        """urllib 直取图时没有默认 UA，请求头里必须自带一个，否则 403"""
+        self.assertIn('User-Agent', javbus.image_headers(JAVBUS_COVER))
+
+    def test_dmm_image_keeps_its_referer(self):
+        self.assertEqual(javbus.image_headers('https://awsimgsrc.dmm.co.jp/x/pl.jpg'),
+                         {'Referer': 'https://www.dmm.co.jp/'})
 
 
 if __name__ == '__main__':

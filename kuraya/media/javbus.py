@@ -65,6 +65,9 @@ _DMM_HEADERS = {'Referer': 'https://www.dmm.co.jp/'}
 
 _PLACEHOLDER = 10000
 
+# MGS 系页面上带 mgstage 的截图地址，据此推同目录的竖版包图，见 _mgs_package_cover()
+_MGS_CAP = re.compile(r'(https?://image\.mgstage\.com/images/[^"\']+/)(cap_e_\d+_)([^"\']+\.jpg)')
+
 
 def fetch(number: str) -> Movie | None:
     """
@@ -87,7 +90,7 @@ def fetch(number: str) -> Movie | None:
     return Movie(
         number=_one(tree, 'number') or number.upper(),
         title=title,
-        cover_url=cover_url(number, _one(tree, 'cover')),
+        cover_url=cover_url(number, _one(tree, 'cover'), html),
         actors=_actors(tree),
         tags=_all(tree, 'tags'),
         release=_match(_DATE, _join(tree, 'release')),
@@ -99,30 +102,92 @@ def fetch(number: str) -> Movie | None:
     )
 
 
-def cover_url(number: str, javbus_cover: str) -> str:
+def cover_url(number: str, javbus_cover: str, page: str = '') -> str:
     """
-    挑一张封面。DMM 母版比 javbus 自存封面清晰得多，两套目录逐个探测取最大者，
-    全都无效则退回 javbus。体积是分辨率的代理指标。
-    """
-    best, best_size = '', 0
-    for url in _dmm_candidates(number):
-        size = http.head_size(url, headers=_DMM_HEADERS)
-        if size > best_size:
-            best, best_size = url, size
+    挑一张封面：先看朝向，再看清晰度。
 
-    if best_size >= _PLACEHOLDER:
-        return best
-    return urljoin(BASE, javbus_cover) if javbus_cover else ''
+    两个图床的图不都是竖版：DMM 有的母版本身就是横版（2184×1468 那种），
+    javbus 对 MGS 系存的是横版宣传图（左边一条厂牌 logo）。横版贴到竖版墙面上
+    会被裁得认不出是什么，所以竖版优先；一个竖版都没有才退回横版。
+
+    竖版内部按体积挑最大的 —— DMM 母版通常比 javbus 自存封面清晰。MGS 系
+    页面上带 mgstage 截图地址时，同目录的 pf_e 是不必探体积的竖版包图。
+    """
+    candidates = sorted(((url, http.head_size(url, headers=_DMM_HEADERS))
+                         for url in _dmm_candidates(number)),
+                        key=lambda item: item[1], reverse=True)
+    candidates = [url for url, size in candidates if size >= _PLACEHOLDER]
+    candidates.append(_mgs_package_cover(page))
+    candidates.append(urljoin(BASE, javbus_cover) if javbus_cover else '')
+
+    landscape = ''
+    for url in candidates:
+        shape = _shape(url) if url else None
+        if not shape:
+            continue
+        if shape[1] > shape[0]:
+            return url
+        landscape = landscape or url
+    return landscape
+
+
+def _shape(url: str) -> tuple[int, int] | None:
+    """取封面图并读出 (宽, 高)；取不到、不是 JPEG 都返回 None。"""
+    try:
+        blob = http.get_bytes(url, headers=image_headers(url))
+    except http.Unavailable:
+        return None
+    return _jpeg_size(blob)
+
+
+def _jpeg_size(blob: bytes) -> tuple[int, int] | None:
+    """
+    从 JPEG 字节流里读尺寸：一路跳过段，直到 SOF 段里的高、宽。
+
+    DMM 与 javbus 的封面都是 JPEG；认不出来就交给调用方当「没量到」处理。
+    """
+    if not blob.startswith(b'\xff\xd8'):
+        return None
+    i = 2
+    while i + 9 < len(blob):
+        if blob[i] != 0xFF:
+            i += 1
+            continue
+        marker = blob[i + 1]
+        if marker in (0x01,) or 0xD0 <= marker <= 0xD8:
+            i += 2
+            continue
+        seg_len = int.from_bytes(blob[i + 2:i + 4], 'big')
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            height = int.from_bytes(blob[i + 5:i + 7], 'big')
+            width = int.from_bytes(blob[i + 7:i + 9], 'big')
+            return width, height
+        i += 2 + seg_len
+    return None
+
+
+def _mgs_package_cover(page: str) -> str:
+    """
+    从页面上的 mgstage 截图地址推出同目录的竖版包图：
+
+        …/images/planetplus/263clot/044/cap_e_0_263clot-044.jpg
+        → …/images/planetplus/263clot/044/pf_e_263clot-044.jpg
+    """
+    match = _MGS_CAP.search(page or '')
+    return f'{match.group(1)}pf_e_{match.group(3)}' if match else ''
 
 
 def image_headers(url: str) -> dict:
     """
     取封面图要带的请求头。两个图床都验来路：DMM 认 dmm.co.jp，
     javbus 自存的图不带完整浏览器头会被 Cloudflare 挡下。
+
+    UA 一并给全：走 requests 的调用方本来就有默认 UA，直接用 urllib 取图的
+    调用方没有，缺了就是 403。
     """
     if 'dmm.co.jp' in urlparse(url).netloc:
         return _DMM_HEADERS
-    return HEADERS
+    return {**HEADERS, 'User-Agent': http.USER_AGENT}
 
 
 def _dmm_candidates(number: str) -> list[str]:
